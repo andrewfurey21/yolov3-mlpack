@@ -34,7 +34,30 @@ public:
   void embed(Image& source, Image& dest, size_t dx, size_t dy);
   void resize(Image& source, Image& dest, size_t newWidth, size_t newHeight);
   void letterboxImage(size_t newWidth, size_t newHeight);
-  void drawBox(double x, double y, double w, double h);
+
+  void drawBox(size_t x, size_t y, size_t w, size_t h, size_t border) {
+    if (x < 0) x = 0;
+    if (x >= this->width) x = this->width - 1;
+
+    if (y < 0) y = 0;
+    if (y >= this->height) y = this->height - 1;
+
+    if (x+w > this->width) w = this->width - x;
+    if (x+w > this->width) w = this->width - x;
+
+    if (y+h > this->height) h = this->height - y;
+    if (y+h > this->height) h = this->height - y;
+
+    for (size_t b = 0; b < border; b++) {
+      for (size_t i = x; i < w; i++) {
+        for (size_t j = y; j < h; j++) {
+          setPixel(i, j, 0, 255);//TODO:dont fill
+          setPixel(i, j, 1, 255);
+          setPixel(i, j, 2, 255);
+        }
+      }
+    }
+  }
 
   void setPixel(size_t x, size_t y, size_t c, double value) {
     assert(x >= 0 && x < width);
