@@ -21,6 +21,12 @@ struct detection {
 
 class Image {
 public:
+  Image() :
+    width(0),
+    height(0),
+    channels(0)
+  {}
+
   Image(size_t width, size_t height, size_t channels) :
   width(width),
   height(height),
@@ -31,6 +37,7 @@ public:
 
   void load(const char* fileName);
   void save(const char* fileName);
+
   void embed(Image& source, Image& dest, size_t dx, size_t dy) {
     for (size_t c = 0; c < source.channels; c++) {
       for (size_t y = 0; y < source.height; y++) {
@@ -41,8 +48,29 @@ public:
       }
     }
   }
-  void resize(Image& source, Image& dest, size_t newWidth, size_t newHeight);
-  void letterboxImage(size_t newWidth, size_t newHeight);
+
+  void resize(Image& source, Image& dest, size_t newWidth, size_t newHeight) {
+    dest.data = std::vector<double>(newWidth * newHeight * source.channels);
+    //TODO: interpolate across x and y
+  }
+
+  Image letterboxImage(size_t newWidth, size_t newHeight) {
+    int newW = this->width;
+    int newH = this->height;
+    if (((float)newWidth/newW) < ((float)newHeight/newH)) {
+        newW = newWidth;
+        newH = this->height * newWidth / this->width;
+    } else {
+        newH = newHeight;
+        newW = this->width * newHeight / this->height;
+    }
+    Image resized;
+    resize(*this, resized, newW, newH);
+    Image boxed(newWidth, newHeight, this->channels);
+    boxed.fill(0.5);//fill with gray
+    embed(resized, boxed, (newWidth - newW)/2, (newHeight - newH)/2);
+    return boxed;
+  }
 
   void drawBox(size_t x, size_t y, size_t w, size_t h, size_t border) {
     if (x < 0) x = 0;
@@ -60,9 +88,9 @@ public:
     for (size_t b = 0; b < border; b++) {
       for (size_t i = x; i < w; i++) {
         for (size_t j = y; j < h; j++) {
-          setPixel(i, j, 0, 255);//TODO:dont fill
-          setPixel(i, j, 1, 255);
-          setPixel(i, j, 2, 255);
+          setPixel(i, j, 0, 1.0f);//TODO:dont fill
+          setPixel(i, j, 1, 1.0f);
+          setPixel(i, j, 2, 1.0f);
         }
       }
     }
@@ -85,6 +113,11 @@ public:
     size_t index = c * width * height + y * width + x;
     return data[index];
   }
+
+  void fill(double value) {
+    std::fill(data.begin(), data.end(), value);
+  }
+
 private:
   size_t width, height, channels;
   std::vector<double> data;
