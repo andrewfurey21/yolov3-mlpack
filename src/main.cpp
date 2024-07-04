@@ -31,7 +31,16 @@ public:
 
   void load(const char* fileName);
   void save(const char* fileName);
-  void embed(Image& source, Image& dest, size_t dx, size_t dy);
+  void embed(Image& source, Image& dest, size_t dx, size_t dy) {
+    for (size_t c = 0; c < source.channels; c++) {
+      for (size_t y = 0; y < source.height; y++) {
+        for (size_t x = 0; x < source.width; x++) {
+          double value = source.getPixel(x, y, c);
+          dest.setPixel(x+dx, y+dy, c, value);
+        }
+      }
+    }
+  }
   void resize(Image& source, Image& dest, size_t newWidth, size_t newHeight);
   void letterboxImage(size_t newWidth, size_t newHeight);
 
@@ -68,7 +77,7 @@ public:
     data[index] = value;
   }
 
-  double getPixel(size_t x, size_t y, size_t c, double value) {
+  double getPixel(size_t x, size_t y, size_t c) {
     assert(x >= 0 && x < width);
     assert(y >= 0 && y < width);
     assert(c >= 0 && c < channels);
