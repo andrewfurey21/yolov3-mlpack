@@ -4,11 +4,6 @@
 #include <stdexcept>
 #include <stdio.h>
 
-#define STB_IMAGE_IMPLEMENTATION
-#include "../stb_image.h"
-#define STB_IMAGE_WRITE_IMPLEMENTATION
-#include "../stb_image_write.h"
-
 #include "../models/models/yolov3_tiny/yolov3_tiny.hpp"
 
 
@@ -41,7 +36,7 @@ public:
   }
 
   void load(const char* fileName) {
-    size_t width, height, channels;
+    int width, height, channels;
     uint8_t* data = stbi_load(fileName, &width, &height, &channels, 3);
     if (!data) throw std::runtime_error("Could not load image\n");
 
