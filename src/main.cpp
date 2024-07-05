@@ -15,10 +15,6 @@ struct detection {
   double objectness;
 };
 
-//needs indexing stuff
-// detection getDetection(arma::mat yoloOutputs, std::vector<double> yoloDimensions) {
-// }
-
 class Image {
 public:
   Image() :
@@ -124,6 +120,5 @@ private:
 };
 
 int main(void) {
-
   return 0;
 }
