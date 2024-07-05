@@ -1,7 +1,16 @@
 #include <cstdint>
 #include <mlpack.hpp>
 #include <armadillo>
+#include <stdexcept>
+#include <stdio.h>
+
+#define STB_IMAGE_IMPLEMENTATION
+#include "../stb_image.h"
+#define STB_IMAGE_WRITE_IMPLEMENTATION
+#include "../stb_image_write.h"
+
 #include "../models/models/yolov3_tiny/yolov3_tiny.hpp"
+
 
 #define INPUT "input.jpg"
 #define OUTPUT "output.jpg"
@@ -31,8 +40,40 @@ public:
     data = std::vector<double>(width * height * channels);
   }
 
-  void load(const char* fileName);
-  void save(const char* fileName);
+  void load(const char* fileName) {
+    size_t width, height, channels;
+    uint8_t* data = stbi_load(fileName, &width, &height, &channels, 3);
+    if (!data) throw std::runtime_error("Could not load image\n");
+
+    this->channels = 3;
+    this->width = width;
+    this->height = height;
+
+    for (int c = 0; c < this->channels; ++c){
+        for (int j = 0; j < this->height; ++j){
+            for (int i = 0; i < this->width; ++i){
+                int dest = i + this->width*j + this->width*this->height*c;
+                int source = c + c*i + c*this->width*j;
+                this->data[dest] = (double)data[source]/255.0f;
+            }
+        }
+    }
+    stbi_image_free(data);
+  }
+
+  void save(const char* fileName) {
+    uint8_t* data = (uint8_t*)calloc(this->width*this->height*this->channels, sizeof(uint8_t)); 
+    for (int c = 0; c < this->channels; ++c) {
+        for (int i = 0; i < this->width*this->height; ++i) {
+            data[i*this->channels+c] = (uint8_t)(255*this->data[i + c*this->width*this->height]);
+        }
+    }
+    int success = stbi_write_jpg(fileName, this->width, this->height, this->channels, data, 80);
+    if (!success) {
+	throw std::runtime_error("Could not write to image\n");
+    }
+    free(data);
+  }
 
   void embed(Image& source, Image& dest, size_t dx, size_t dy) {
     for (size_t c = 0; c < source.channels; c++) {
