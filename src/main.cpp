@@ -130,27 +130,33 @@ void tile(arma::Mat<double>& a,
   embed(b, bInfo, output, outputInfo, aInfo.Width()+dx, 0);
 }
 
+void border(arma::Mat<double>& source,
+            mlpack::data::ImageInfo sourceInfo,
+            arma::Mat<double>& dest,
+            mlpack::data::ImageInfo& destInfo,
+            size_t borderSize) {
+  destInfo = mlpack::data::ImageInfo(sourceInfo.Width() + 2 * borderSize, sourceInfo.Height() + 2 * borderSize, sourceInfo.Channels());
+  dest = arma::Mat<double>(destInfo.Width() * destInfo.Height() * destInfo.Channels(), 1);
+  fill(dest, 1.0f);
+  embed(source, sourceInfo, dest, destInfo, borderSize, borderSize);
+}
+
 int main(void) {
   const std::string input = "input.jpg";
-  const std::string input2 = "input2.jpg";
   const std::string output = "output.jpg";
 
   mlpack::data::ImageInfo inputInfo;
-  mlpack::data::ImageInfo inputInfo2;
   mlpack::data::ImageInfo outputInfo(1000, 600, 3);
 
   arma::mat inputData;
   load(input, inputData, inputInfo);
 
-  arma::mat inputData2;
-  load(input2, inputData2, inputInfo2);
-  save(output, inputData, inputInfo);
-
   arma::mat outputData = resize(inputData, inputInfo, outputInfo);
   //fill(outputData, 1);
   //embed(inputData, inputInfo, outputData, outputInfo, 600, 801);
   //letterbox(inputData, inputInfo, outputData, outputInfo);
-  tile(inputData, inputInfo, inputData2, inputInfo2, outputData, outputInfo, 0);
+  //tile(inputData, inputInfo, inputData2, inputInfo2, outputData, outputInfo, 0);
+  border(inputData, inputInfo, outputData, outputInfo, 5);
 
   save(output, outputData, outputInfo);
 
