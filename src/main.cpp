@@ -24,12 +24,10 @@ void fill(arma::Mat<double>& data, double value) {
 
 arma::Mat<double> resize(const arma::Mat<double>& data, 
                          mlpack::data::ImageInfo& info, 
-                         mlpack::data::ImageInfo& outputInfo,
-                         double widthScale, 
-                         double heightScale) {
-  assert(widthScale > 0 && heightScale > 0);
-  size_t newWidth = std::floor(info.Width() * widthScale);
-  size_t newHeight = std::floor(info.Height() * heightScale);
+                         mlpack::data::ImageInfo& outputInfo) {
+
+  size_t newWidth = outputInfo.Width();
+  size_t newHeight = outputInfo.Height();
 
   assert(data.n_rows == info.Width() * info.Height() * 3 && data.n_cols == 1);
   assert(newWidth > 1);
@@ -52,13 +50,9 @@ arma::Mat<double> resize(const arma::Mat<double>& data,
         size_t xWeight = (xRatio * i) - xLow;
         size_t yWeight = (yRatio * j) - yLow;
 
-        //double a = data.at(yLow * info.Width() + xLow);
         double a = data.at(yLow * info.Width() * info.Channels() + xLow * info.Channels() + channel);
-        //double b = data.at(yLow * info.Width() + xHigh);
         double b = data.at(yLow * info.Width() * info.Channels() + xHigh * info.Channels() + channel);
-        //double c = data.at(yHigh * info.Width() + xLow);
         double c = data.at(yHigh * info.Width() * info.Channels() + xLow * info.Channels() + channel);
-        //double d = data.at(yHigh * info.Width() + xHigh);
         double d = data.at(yHigh * info.Width() * info.Channels() + xHigh * info.Channels() + channel);
 
         double value = 
@@ -98,20 +92,42 @@ void embed(arma::Mat<double>& source,
   }
 }
 
+void letterbox(arma::Mat<double>&source,
+               mlpack::data::ImageInfo sourceInfo,
+               arma::Mat<double>& dest,
+               mlpack::data::ImageInfo& destInfo) {
+  size_t width, height;
+  if (destInfo.Width() / sourceInfo.Width() > destInfo.Height() / sourceInfo.Height()) {
+    height = destInfo.Height();
+    width = sourceInfo.Width() * destInfo.Height() / sourceInfo.Height();
+  } else {
+    width = destInfo.Width();
+    height = sourceInfo.Height() * destInfo.Width() / sourceInfo.Width();
+  }
+
+  mlpack::data::ImageInfo resizedInfo(width, height, 3);
+  arma::Mat<double> resized = resize(source, sourceInfo, resizedInfo);
+
+  dest = arma::Mat<double>(destInfo.Width() * destInfo.Height() * destInfo.Channels(), 1);
+  fill(dest, .3);
+  embed(resized, resizedInfo, dest, destInfo, (destInfo.Width() - width)/2, (destInfo.Height() - height)/2);
+}
+
 int main(void) {
   const std::string input = "input.jpg";
   const std::string output = "output.jpg";
 
   mlpack::data::ImageInfo inputInfo;
-  mlpack::data::ImageInfo outputInfo;
+  mlpack::data::ImageInfo outputInfo(1000, 600, 3);
 
   arma::mat inputData;
   load(input, inputData, inputInfo);
   save(output, inputData, inputInfo);
 
-  arma::mat outputData = resize(inputData, inputInfo, outputInfo, 2, 2);
+  arma::mat outputData = resize(inputData, inputInfo, outputInfo);
   //fill(outputData, 1);
   //embed(inputData, inputInfo, outputData, outputInfo, 600, 801);
+  letterbox(inputData, inputInfo, outputData, outputInfo);
 
   save(output, outputData, outputInfo);
 
