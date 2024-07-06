@@ -113,21 +113,44 @@ void letterbox(arma::Mat<double>&source,
   embed(resized, resizedInfo, dest, destInfo, (destInfo.Width() - width)/2, (destInfo.Height() - height)/2);
 }
 
+void tile(arma::Mat<double>& a,
+          mlpack::data::ImageInfo aInfo,
+          arma::Mat<double>& b,
+          mlpack::data::ImageInfo& bInfo,
+          arma::Mat<double>& output,
+          mlpack::data::ImageInfo& outputInfo,
+          size_t dx) {
+  assert(aInfo.Channels() == bInfo.Channels());
+  size_t height = std::max(aInfo.Height(), bInfo.Height());
+  size_t width = dx + aInfo.Width() + bInfo.Width();
+  output = arma::Mat<double>(width * height * aInfo.Channels(), 1);
+  outputInfo = mlpack::data::ImageInfo(width, height, aInfo.Channels());
+  fill(output, 1.0f);
+  embed(a, aInfo, output, outputInfo, 0, 0);
+  embed(b, bInfo, output, outputInfo, aInfo.Width()+dx, 0);
+}
+
 int main(void) {
   const std::string input = "input.jpg";
+  const std::string input2 = "input2.jpg";
   const std::string output = "output.jpg";
 
   mlpack::data::ImageInfo inputInfo;
+  mlpack::data::ImageInfo inputInfo2;
   mlpack::data::ImageInfo outputInfo(1000, 600, 3);
 
   arma::mat inputData;
   load(input, inputData, inputInfo);
+
+  arma::mat inputData2;
+  load(input2, inputData2, inputInfo2);
   save(output, inputData, inputInfo);
 
   arma::mat outputData = resize(inputData, inputInfo, outputInfo);
   //fill(outputData, 1);
   //embed(inputData, inputInfo, outputData, outputInfo, 600, 801);
-  letterbox(inputData, inputInfo, outputData, outputInfo);
+  //letterbox(inputData, inputInfo, outputData, outputInfo);
+  tile(inputData, inputInfo, inputData2, inputInfo2, outputData, outputInfo, 0);
 
   save(output, outputData, outputInfo);
 
