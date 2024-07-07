@@ -147,8 +147,23 @@ int main(void) {
   const std::string input = "input.jpg";
   const std::string output = "output.jpg";
 
+  arma::mat inputData;
+  arma::mat predictions;
+  mlpack::data::ImageInfo inputInfo;
+  mlpack::data::ImageInfo resizeInfo(416, 416, 3);
 
-  mlpack::models::YoloV3Tiny<arma::mat> yoloModel({0, 1, 2}, { 10, 14, 23, 27, 37, 58, 81, 82, 135, 169, 344, 319 });
+  load(input, inputData, inputInfo);
+  arma::mat resizeData = resize(inputData, inputInfo, resizeInfo);
+  
+  mlpack::models::YoloV3Tiny<arma::mat> yolo({ 10, 14, 23, 27, 37, 58, 81, 82, 135, 169, 344, 319 });
+
+  auto model = yolo.Model();
+  model.InputDimensions() = std::vector<size_t>({resizeInfo.Width() * resizeInfo.Height() * resizeInfo.Channels(), 1});
+
+  std::cout << "number of layers: " << model.Network().size() << "\n";
+  std::cout << "resized dims: " << resizeInfo.Width() << " x " << resizeInfo.Height() << " x " << resizeInfo.Channels() << "\n";
+  model.Predict(resizeData, predictions);
+  std::cout << "predictions size: " << predictions.n_rows << " x " << predictions.n_cols << "\n";
 
   return 0;
 }
