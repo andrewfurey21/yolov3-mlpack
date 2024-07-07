@@ -1,6 +1,8 @@
 #include <mlpack.hpp>
 #include <armadillo>
 
+#include "../models/models/yolov3_tiny/yolov3_tiny.hpp"
+
 struct detection {
   double x, y, w, h;
   std::vector<double> classProbabilities;
@@ -145,20 +147,8 @@ int main(void) {
   const std::string input = "input.jpg";
   const std::string output = "output.jpg";
 
-  mlpack::data::ImageInfo inputInfo;
-  mlpack::data::ImageInfo outputInfo(1000, 600, 3);
 
-  arma::mat inputData;
-  load(input, inputData, inputInfo);
-
-  arma::mat outputData = resize(inputData, inputInfo, outputInfo);
-  //fill(outputData, 1);
-  //embed(inputData, inputInfo, outputData, outputInfo, 600, 801);
-  //letterbox(inputData, inputInfo, outputData, outputInfo);
-  //tile(inputData, inputInfo, inputData2, inputInfo2, outputData, outputInfo, 0);
-  border(inputData, inputInfo, outputData, outputInfo, 5);
-
-  save(output, outputData, outputInfo);
+  mlpack::models::YoloV3Tiny<arma::mat> yoloModel({0, 1, 2}, { 10, 14, 23, 27, 37, 58, 81, 82, 135, 169, 344, 319 });
 
   return 0;
 }
