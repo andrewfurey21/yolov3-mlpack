@@ -3,8 +3,12 @@
 
 #include "../models/models/yolov3_tiny/yolov3_tiny.hpp"
 
-struct detection {
+struct box {
   double x, y, w, h;
+};
+
+struct detection {
+  box boundingBox;
   std::vector<double> classProbabilities;
   double objectness;
 };
@@ -143,27 +147,40 @@ void border(arma::Mat<double>& source,
   embed(source, sourceInfo, dest, destInfo, borderSize, borderSize);
 }
 
+// void correctBox(box& a, double width, double height) {}
+// float overlap() {}
+// float boxIntersection(box& a, box& b) {}
+// float boxUnion(box& a, box& b) {}
+// float iou(box& a, box& b) { return boxIntersection(a, b) / boxUnion(a, b); }
+// std::vector<detection> nms_sort(std::vector<detection> detections) {};
+
+void drawDetections(arma::mat& imageData, mlpack::data::ImageInfo& imageInfo, std::vector<detection>& detections) {}
+
 int main(void) {
   const std::string input = "input.jpg";
   const std::string output = "output.jpg";
-
+  
   arma::mat inputData;
   arma::mat predictions;
   mlpack::data::ImageInfo inputInfo;
   mlpack::data::ImageInfo resizeInfo(416, 416, 3);
-
+  
   load(input, inputData, inputInfo);
   arma::mat resizeData = resize(inputData, inputInfo, resizeInfo);
   
   mlpack::models::YoloV3Tiny<arma::mat> yolo({ 10, 14, 23, 27, 37, 58, 81, 82, 135, 169, 344, 319 });
-
+  
   auto model = yolo.Model();
   model.InputDimensions() = std::vector<size_t>({resizeInfo.Width(), resizeInfo.Height(), resizeInfo.Channels(), 1});
-
+  
   std::cout << "number of layers: " << model.Network().size() << "\n";
   std::cout << "resized dims: " << resizeInfo.Width() << " x " << resizeInfo.Height() << " x " << resizeInfo.Channels() << "\n";
   model.Predict(resizeData, predictions, 1);
   std::cout << "predictions size: " << predictions.n_rows << " x " << predictions.n_cols << "\n";
+  std::cout << "model output dimensions: " << model.Network()[16]->OutputDimensions()[0] << ", "
+                                           << model.Network()[16]->OutputDimensions()[1] << ", " 
+                                           << model.Network()[16]->OutputDimensions()[2] << ", " 
+                                           << model.Network()[16]->OutputDimensions()[3] << "\n";
 
   return 0;
 }
