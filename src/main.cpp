@@ -147,11 +147,27 @@ void border(arma::Mat<double>& source,
   embed(source, sourceInfo, dest, destInfo, borderSize, borderSize);
 }
 
-// void correctBox(box& a, double width, double height) {}
-// float overlap() {}
-// float boxIntersection(box& a, box& b) {}
-// float boxUnion(box& a, box& b) {}
-// float iou(box& a, box& b) { return boxIntersection(a, b) / boxUnion(a, b); }
+box getBox(arma::mat output, size_t i, size_t j, size_t n) {
+}
+
+void correctBox(box& a, double imageWidth, double imageHeight) {
+}
+
+double lineOverlap(double a, double aw, double b, double bw) {
+  return std::max(a - aw/2, b - bw/2) - std::min(a + aw/2, b + bw/2);
+}
+
+double boxIntersection(box& a, box& b) {
+  double w = lineOverlap(a.x, a.w, b.x, b.w);
+  double h = lineOverlap(a.y, a.h, b.y, b.h);
+  assert(w >= 0 && h >= 0);
+  return w * h;
+}
+
+double boxUnion(box& a, box& b) {
+  return a.w * a.h + b.w * b.h - boxIntersection(a,b);
+}
+float iou(box& a, box& b) { return boxIntersection(a, b) / boxUnion(a, b); }
 // std::vector<detection> nms_sort(std::vector<detection> detections) {};
 
 void drawDetections(arma::mat& imageData, mlpack::data::ImageInfo& imageInfo, std::vector<detection>& detections) {}
@@ -170,17 +186,17 @@ int main(void) {
   
   mlpack::models::YoloV3Tiny<arma::mat> yolo({ 10, 14, 23, 27, 37, 58, 81, 82, 135, 169, 344, 319 });
   
-  auto model = yolo.Model();
-  model.InputDimensions() = std::vector<size_t>({resizeInfo.Width(), resizeInfo.Height(), resizeInfo.Channels(), 1});
-  
-  std::cout << "number of layers: " << model.Network().size() << "\n";
-  std::cout << "resized dims: " << resizeInfo.Width() << " x " << resizeInfo.Height() << " x " << resizeInfo.Channels() << "\n";
-  model.Predict(resizeData, predictions, 1);
-  std::cout << "predictions size: " << predictions.n_rows << " x " << predictions.n_cols << "\n";
-  std::cout << "model output dimensions: " << model.Network()[16]->OutputDimensions()[0] << ", "
-                                           << model.Network()[16]->OutputDimensions()[1] << ", " 
-                                           << model.Network()[16]->OutputDimensions()[2] << ", " 
-                                           << model.Network()[16]->OutputDimensions()[3] << "\n";
+  // auto model = yolo.Model();
+  // model.InputDimensions() = std::vector<size_t>({resizeInfo.Width(), resizeInfo.Height(), resizeInfo.Channels(), 1});
+  // 
+  // std::cout << "number of layers: " << model.Network().size() << "\n";
+  // std::cout << "resized dims: " << resizeInfo.Width() << " x " << resizeInfo.Height() << " x " << resizeInfo.Channels() << "\n";
+  // model.Predict(resizeData, predictions, 1);
+  // std::cout << "predictions size: " << predictions.n_rows << " x " << predictions.n_cols << "\n";
+  // std::cout << "model output dimensions: " << model.Network()[16]->OutputDimensions()[0] << ", "
+  //                                          << model.Network()[16]->OutputDimensions()[1] << ", " 
+  //                                          << model.Network()[16]->OutputDimensions()[2] << ", " 
+  //                                          << model.Network()[16]->OutputDimensions()[3] << "\n";
 
   return 0;
 }
