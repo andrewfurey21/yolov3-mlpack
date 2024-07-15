@@ -147,11 +147,7 @@ void border(arma::Mat<double>& source,
   embed(source, sourceInfo, dest, destInfo, borderSize, borderSize);
 }
 
-box getBox(arma::mat output, size_t i, size_t j, size_t n) {
-}
 
-void correctBox(box& a, double imageWidth, double imageHeight) {
-}
 
 double lineOverlap(double a, double aw, double b, double bw) {
   return std::max(a - aw/2, b - bw/2) - std::min(a + aw/2, b + bw/2);
@@ -168,9 +164,37 @@ double boxUnion(box& a, box& b) {
   return a.w * a.h + b.w * b.h - boxIntersection(a,b);
 }
 float iou(box& a, box& b) { return boxIntersection(a, b) / boxUnion(a, b); }
-// std::vector<detection> nms_sort(std::vector<detection> detections) {};
 
+void correctBox(box& b, size_t imageWidth, size_t imageHeight, size_t netWidth, size_t netHeight) {
+    int new_w = 0;
+    int new_h = 0;
+    if (((float)netWidth/imageWidth) < ((float)netHeight/imageHeight)) {
+        new_w = netWidth;
+        new_h = (imageHeight * netWidth)/imageWidth;
+    } else {
+        new_h = netHeight;
+        new_w = (imageWidth * netHeight)/imageHeight;
+    }
+    b.x = (b.x - (netWidth - new_w)/2./netWidth) / ((float)new_w/netWidth);
+    b.y = (b.y - (netHeight - new_h)/2./netHeight) / ((float)new_h/netHeight);
+    b.w *= (float)netWidth/new_w;
+    b.h *= (float)netHeight/new_h;
+}
+
+std::vector<detection> getDetections(arma::mat& output, std::vector<size_t> outputDims) {
+  return {}; 
+}
+
+std::vector<detection> nms_sort(std::vector<detection> detections) {return {};};
 void drawDetections(arma::mat& imageData, mlpack::data::ImageInfo& imageInfo, std::vector<detection>& detections) {}
+void printLayer(mlpack::Layer<arma::mat>* layer, size_t layerIndex) {
+  int width = layer->OutputDimensions()[0];
+  int height = layer->OutputDimensions()[1];
+  int channels = layer->OutputDimensions()[2];
+  int batch = layer->OutputDimensions()[3];
+  printf("Layer %2d output shape:  %3d x %3d x %4d x %3d\n", (int)layerIndex, width, height, channels, batch);
+  //std::cout << "Layer " << layerIndex << ", output shape: " << width << " x " << height << " x " << channels << " x " << batch << "\n";
+}
 
 int main(void) {
   const std::string input = "input.jpg";
@@ -186,17 +210,17 @@ int main(void) {
   
   mlpack::models::YoloV3Tiny<arma::mat> yolo({ 10, 14, 23, 27, 37, 58, 81, 82, 135, 169, 344, 319 });
   
-  // auto model = yolo.Model();
-  // model.InputDimensions() = std::vector<size_t>({resizeInfo.Width(), resizeInfo.Height(), resizeInfo.Channels(), 1});
-  // 
-  // std::cout << "number of layers: " << model.Network().size() << "\n";
-  // std::cout << "resized dims: " << resizeInfo.Width() << " x " << resizeInfo.Height() << " x " << resizeInfo.Channels() << "\n";
-  // model.Predict(resizeData, predictions, 1);
-  // std::cout << "predictions size: " << predictions.n_rows << " x " << predictions.n_cols << "\n";
-  // std::cout << "model output dimensions: " << model.Network()[16]->OutputDimensions()[0] << ", "
-  //                                          << model.Network()[16]->OutputDimensions()[1] << ", " 
-  //                                          << model.Network()[16]->OutputDimensions()[2] << ", " 
-  //                                          << model.Network()[16]->OutputDimensions()[3] << "\n";
+  auto model = yolo.Model();
+  model.InputDimensions() = std::vector<size_t>({resizeInfo.Width(), resizeInfo.Height(), resizeInfo.Channels(), 1});
+
+  std::cout << "Number of layers: " << model.Network().size() << "\n";
+  std::cout << "resized dims: " << resizeInfo.Width() << " x " << resizeInfo.Height() << " x " << resizeInfo.Channels() << "\n";
+  model.Predict(resizeData, predictions, 1);
+  for (size_t i = 0; i < model.Network().size(); i++) {
+    if (i == 16 || i == 17 || i == 20) continue;
+    auto layer = model.Network()[i];
+    printLayer(layer, i);
+  }
 
   return 0;
 }
