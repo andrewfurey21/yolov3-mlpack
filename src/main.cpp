@@ -193,7 +193,6 @@ void printLayer(mlpack::Layer<arma::mat>* layer, size_t layerIndex) {
   int channels = layer->OutputDimensions()[2];
   int batch = layer->OutputDimensions()[3];
   printf("Layer %2d output shape:  %3d x %3d x %4d x %3d\n", (int)layerIndex, width, height, channels, batch);
-  //std::cout << "Layer " << layerIndex << ", output shape: " << width << " x " << height << " x " << channels << " x " << batch << "\n";
 }
 
 int main(void) {
