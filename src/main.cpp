@@ -1,3 +1,4 @@
+//#include "../../mlpack/src/mlpack.hpp"
 #include <mlpack.hpp>
 #include <armadillo>
 
@@ -147,8 +148,6 @@ void border(arma::Mat<double>& source,
   embed(source, sourceInfo, dest, destInfo, borderSize, borderSize);
 }
 
-
-
 double lineOverlap(double a, double aw, double b, double bw) {
   return std::max(a - aw/2, b - bw/2) - std::min(a + aw/2, b + bw/2);
 }
@@ -187,13 +186,6 @@ std::vector<detection> getDetections(arma::mat& output, std::vector<size_t> outp
 
 std::vector<detection> nms_sort(std::vector<detection> detections) {return {};};
 void drawDetections(arma::mat& imageData, mlpack::data::ImageInfo& imageInfo, std::vector<detection>& detections) {}
-void printLayer(mlpack::Layer<arma::mat>* layer, size_t layerIndex) {
-  int width = layer->OutputDimensions()[0];
-  int height = layer->OutputDimensions()[1];
-  int channels = layer->OutputDimensions()[2];
-  int batch = layer->OutputDimensions()[3];
-  printf("Layer %2d output shape:  %3d x %3d x %4d x %3d\n", (int)layerIndex, width, height, channels, batch);
-}
 
 int main(void) {
   const std::string input = "input.jpg";
@@ -206,20 +198,11 @@ int main(void) {
   
   load(input, inputData, inputInfo);
   arma::mat resizeData = resize(inputData, inputInfo, resizeInfo);
-  
-  mlpack::models::YoloV3Tiny<arma::mat> yolo({ 10, 14, 23, 27, 37, 58, 81, 82, 135, 169, 344, 319 });
-  
-  auto model = yolo.Model();
-  model.InputDimensions() = std::vector<size_t>({resizeInfo.Width(), resizeInfo.Height(), resizeInfo.Channels(), 1});
 
-  std::cout << "Number of layers: " << model.Network().size() << "\n";
-  std::cout << "resized dims: " << resizeInfo.Width() << " x " << resizeInfo.Height() << " x " << resizeInfo.Channels() << "\n";
-  model.Predict(resizeData, predictions, 1);
-  for (size_t i = 0; i < model.Network().size(); i++) {
-    if (i == 16 || i == 17 || i == 20) continue;
-    auto layer = model.Network()[i];
-    printLayer(layer, i);
-  }
+  std::vector<double> anchors = { 10, 14, 23, 27, 37, 58, 81, 82, 135, 169, 344, 319 };
+  mlpack::models::YoloV3Tiny<arma::mat> yolo(anchors);
+
+  yolo.printModel();
 
   return 0;
 }
