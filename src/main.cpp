@@ -192,7 +192,8 @@ int main(void) {
   const std::string output = "output.jpg";
   
   arma::mat inputData;
-  arma::mat predictions;
+  arma::mat smallPreds;
+  arma::mat largePreds;
   mlpack::data::ImageInfo inputInfo;
   mlpack::data::ImageInfo resizeInfo(416, 416, 3);
   
@@ -204,5 +205,10 @@ int main(void) {
 
   yolo.printModel();
 
+  yolo.Predict(resizeData, smallPreds, largePreds, 1);
+  
+  std::cout << "Small preds: " << smallPreds.n_rows << " x " << smallPreds.n_cols << "\n";
+  std::cout << "Large preds: " << largePreds.n_rows << " x " << largePreds.n_cols << "\n";
+  
   return 0;
 }
