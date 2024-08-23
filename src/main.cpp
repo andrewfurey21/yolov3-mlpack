@@ -142,7 +142,7 @@ void border(arma::Mat<double>& source,
 }
 
 double lineOverlap(double a, double aw, double b, double bw) {
-  return std::max(a - aw/2, b - bw/2) - std::min(a + aw/2, b + bw/2);
+  return std::abs(std::max(a - aw/2, b - bw/2) - std::min(a + aw/2, b + bw/2));
 }
 
 struct box {
@@ -238,7 +238,9 @@ void getDetections(arma::mat& output,
     for (size_t n = 0; n < anchors.size() / 2; i++) {
       size_t oidx = outputIndex(n, i, 4, gridWidth, gridHeight, classes);
       double objectness = output(oidx, 0);
-      if (objectness < ignoreThresh) continue;
+      if (objectness < ignoreThresh) {
+        continue;
+      }
       detection d;
       d.objectness = objectness;
       d.boundingBox = getBox(output, n, i, gridWidth, gridHeight, width, height, classes, anchors);
@@ -281,10 +283,14 @@ void imageLayout(const arma::mat& src, const ImageInfo& info, arma::mat& dest) {
     }
   }
   dest = arma::mat(data);
-
 }
 
-void nms(std::vector<detection>& detections, size_t classes, double ignoreThresh) {// TODO: test nms
+void nms(std::vector<detection>& detections, size_t classes, double iouThresh) {
+  for (size_t i = 0; i < detections.size(); i++) {
+    if (detections[i].objectness <= 0) {
+      detections.erase(std::next(detections.begin(), i));
+    }
+  }
   for (size_t c = 0; c < classes; c++) {
     std::sort(detections.begin(), detections.end(), [=](const detection& a, const detection& b) {
         return a.classProbabilities[c] > b.classProbabilities[c];
@@ -292,8 +298,9 @@ void nms(std::vector<detection>& detections, size_t classes, double ignoreThresh
     for (size_t i = 0; i < detections.size(); i++) {
       if (detections[i].classProbabilities[c] == 0) continue;
       for (size_t j = 0; j < detections.size(); j++) {
-        if (i != j && iou(detections[i].boundingBox, detections[j].boundingBox) > ignoreThresh) 
+        if (i != j && iou(detections[i].boundingBox, detections[j].boundingBox) > iouThresh) {
           detections[j].classProbabilities[c] = 0;
+        }
       }
     }
   }
@@ -344,7 +351,7 @@ void drawBoundingBox(arma::mat& imageData, ImageInfo imageInfo, box bbox, size_t
   }
 }
 
-// TODO: just draws boxes for now, not labels
+// TODO: draw labels when drawing detections
 void drawDetections(arma::mat& imageData, ImageInfo& imageInfo, std::vector<detection>& detections) {
   for (auto &detection : detections) {
     drawBoundingBox(imageData, imageInfo, detection.boundingBox, 4);
@@ -384,13 +391,25 @@ int main(void) {
   //
   // std::vector<detection> detections = getDetections(modelOutput, {13, 13, 255}, ignoreThresh);//there should be  3 * 13 * 13 (large only)
 
-  box b = { 250, 250, 100, 160 };
+  // box a = { 0, 0, 100, 100 };
+  // box b = { 50, 50, 100, 100 };
+  // box c = { 0, 50, 100, 100 };
+  detection a = { {50, 50, 100, 100}, {0.5, 0.75, 0.25}, 0.5};
+  detection b = { {100, 100, 100, 100}, {0.85, 0.75, 0.30}, 0.9};
+  detection c = { {50, 100, 100, 100}, {0.15, 0.45, 0.20}, 0.2};
 
-  arma::mat columnMajorInput;
-  arma::mat finalOutput;
-  columnMajorLayout(inputData, inputInfo, columnMajorInput);
-  drawBoundingBox(columnMajorInput, inputInfo, b, 5);
-  imageLayout(columnMajorInput, inputInfo, finalOutput);
-  save(outputFile, finalOutput, inputInfo);
+  std::vector<detection> d = { a, b, c };
+  nms(d, 3, .4);
+
+  for (auto &det : d) {
+    std::cout << det.objectness << "\n";
+  }
+
+  // arma::mat columnMajorInput;
+  // arma::mat finalOutput;
+  // columnMajorLayout(inputData, inputInfo, columnMajorInput);
+  // drawBoundingBox(columnMajorInput, inputInfo, b, 5);
+  // imageLayout(columnMajorInput, inputInfo, finalOutput);
+  // save(outputFile, finalOutput, inputInfo);
   return 0;
 }
