@@ -3,6 +3,7 @@
 #include "../models/models/yolov3_tiny/yolov3_tiny.hpp"
 #include <armadillo>
 #include <mlpack/core/data/image_info.hpp>
+#include <mlpack/methods/ann/layer/nearest_interpolation.hpp>
 
 using namespace mlpack::data;
 
@@ -167,7 +168,7 @@ double boxUnion(box& a, box& b) {
 }
 float iou(box& a, box& b) { return boxIntersection(a, b) / boxUnion(a, b); }
 
-void correctBox(box& b, size_t imageWidth, size_t imageHeight, size_t netWidth, size_t netHeight) {// TODO: test
+void correctBox(box& b, size_t imageWidth, size_t imageHeight, size_t netWidth, size_t netHeight) {
     int newW = 0;
     int newH = 0;
     if (((float)netWidth/imageWidth) < ((float)netHeight/imageHeight)) {
@@ -186,7 +187,7 @@ void correctBox(box& b, size_t imageWidth, size_t imageHeight, size_t netWidth, 
 size_t outputIndex(size_t mask, size_t cell, size_t offset, size_t width, size_t height, size_t classes) {
   assert(mask >= 0 && mask < 3);//3 should be const?
   assert(cell >= 0 && cell < width * height);
-  assert(offset >= 0 && offset < classes);
+  assert(offset >= 0 && offset < classes + 5);
   return mask * width * height * (4 + 1 + classes) + offset * width * height + cell;
 }
 
@@ -199,23 +200,25 @@ box getBox(const arma::mat& output,
            size_t width, 
            size_t height, 
            size_t classes,
-           std::vector<size_t>& anchors) {
+           std::pair<size_t, size_t>& anchor) {
   box b;
   // x,y : add row/col, / 13
   // w, h: use anchors here, then / 416
 
   size_t i = cell / layerHeight;
-  size_t j = cell % layerWidth;// TODO: not sure if this is correct...
+  size_t j = cell % layerHeight;
 
   size_t xidx = outputIndex(mask, cell, 0, layerWidth, layerHeight, classes);
   size_t yidx = outputIndex(mask, cell, 1, layerWidth, layerHeight, classes);
   size_t widx = outputIndex(mask, cell, 2, layerWidth, layerHeight, classes);
   size_t hidx = outputIndex(mask, cell, 3, layerWidth, layerHeight, classes);
 
+  std::cout << "Before yolo: " << b.x << ", " << b.y << ", " << b.w << ", " << b.h << "\n";
   b.x = (i + output(xidx, 0))/layerWidth;
   b.y = (j + output(yidx, 0))/layerHeight;
-  b.w = anchors[mask * 2]     * std::exp(output(widx, 0))/width;
-  b.h = anchors[mask * 2 + 1] * std::exp(output(hidx, 0))/height;
+  b.w = anchor.first * std::exp(output(widx, 0))/width;
+  b.h = anchor.second * std::exp(output(hidx, 0))/height;
+  std::cout << "After yolo: " << b.x << ", " << b.y << ", " << b.w << ", " << b.h << "\n";
   return b;
 }
 
@@ -223,9 +226,11 @@ box getBox(const arma::mat& output,
 void getDetections(arma::mat& output, 
                    std::vector<detection>& detections,
                    std::vector<size_t>& outputDims, 
-                   std::vector<size_t>& anchors,
+                   std::vector<std::pair<size_t, size_t>>& anchors,
                    size_t width,
                    size_t height,
+                   size_t imageWidth,
+                   size_t imageHeight,
                    double ignoreThresh) {
   size_t gridWidth = outputDims[0];
   size_t gridHeight = outputDims[1];
@@ -235,7 +240,7 @@ void getDetections(arma::mat& output,
   size_t classes = gridDepth / 3 - 5;
 
   for (size_t i = 0; i < gridWidth * gridHeight; i++) {//column major
-    for (size_t n = 0; n < anchors.size() / 2; i++) {
+    for (size_t n = 0; n < anchors.size(); n++) {
       size_t oidx = outputIndex(n, i, 4, gridWidth, gridHeight, classes);
       double objectness = output(oidx, 0);
       if (objectness < ignoreThresh) {
@@ -243,7 +248,8 @@ void getDetections(arma::mat& output,
       }
       detection d;
       d.objectness = objectness;
-      d.boundingBox = getBox(output, n, i, gridWidth, gridHeight, width, height, classes, anchors);
+      d.boundingBox = getBox(output, n, i, gridWidth, gridHeight, width, height, classes, anchors[i]);
+      correctBox(d.boundingBox, imageWidth, imageHeight, width, height);
       d.classProbabilities.resize(classes);
       for (size_t j = 0; j < classes; j++) {
         size_t cidx = outputIndex(n, i, 5 + j, gridWidth, gridHeight, classes);
@@ -306,14 +312,15 @@ void nms(std::vector<detection>& detections, size_t classes, double iouThresh) {
   }
 };
 
-void drawBox(arma::mat& imageData, ImageInfo imageInfo, int x1, int y1, int x2, int y2, double r) {
+// NOTE: boxes have weird values
+void drawBox(arma::mat& imageData, ImageInfo& imageInfo, int x1, int y1, int x2, int y2, double r) {
   assert(y1 <= y2);
   assert(x1 <= x2);
 
-  x1 = std::clamp<int>(x1, 0, imageInfo.Width());
-  x2 = std::clamp<int>(x2, 0, imageInfo.Width());
-  y1 = std::clamp<int>(y1, 0, imageInfo.Height());
-  y2 = std::clamp<int>(y2, 0, imageInfo.Height());
+  x1 = std::clamp<int>(x1, 0, imageInfo.Width()-1);
+  x2 = std::clamp<int>(x2, 0, imageInfo.Width()-1);
+  y1 = std::clamp<int>(y1, 0, imageInfo.Height()-1);
+  y2 = std::clamp<int>(y2, 0, imageInfo.Height()-1);
 
   for (int i = x1; i <= x2; i++) {
     size_t side1 = i * imageInfo.Height() + y1;
@@ -339,7 +346,7 @@ void drawBox(arma::mat& imageData, ImageInfo imageInfo, int x1, int y1, int x2, 
   }
 }
 
-void drawBoundingBox(arma::mat& imageData, ImageInfo imageInfo, box bbox, size_t width) {
+void drawBoundingBox(arma::mat& imageData, ImageInfo& imageInfo, box& bbox, size_t width) {
   width = std::clamp<size_t>(width, 0, 10);
 
   int x1 = bbox.x - bbox.w/2.0f;
@@ -352,11 +359,13 @@ void drawBoundingBox(arma::mat& imageData, ImageInfo imageInfo, box bbox, size_t
 }
 
 // TODO: draw labels when drawing detections
-void drawDetections(arma::mat& imageData, ImageInfo& imageInfo, std::vector<detection>& detections) {
-  for (auto &detection : detections) {
-    drawBoundingBox(imageData, imageInfo, detection.boundingBox, 4);
+void drawDetections(arma::mat& imageData, ImageInfo& imageInfo, std::vector<detection>& detections, size_t maxObjects) {
+  for (size_t i = 0; i < maxObjects && i < detections.size(); i++) {
+    drawBoundingBox(imageData, imageInfo, detections[i].boundingBox, 4);
   }
 }
+
+void columnMajorWeights() {}
 
 void loadWeights(const std::string weights, mlpack::models::YoloV3Tiny<arma::mat> &model) {
 
@@ -366,50 +375,74 @@ using namespace mlpack;
 int main(void) {
   const std::string inputFile = "input.jpg";
   const std::string outputFile = "output.jpg";
+ 
+  double ignoreThresh = 0.5f;
+  std::vector<std::pair<size_t, size_t>> anchors = { 
+    {10, 14},
+    {23, 27},
+    {37, 58},
+    {81, 82},
+    {135, 169},
+    {344, 319}
+  };
+  size_t maxObjects = 1;
 
-  double ignoreThresh = 0.7f;
-
+  std::vector<size_t> largeDims = {13, 13, 255, 1};
+  std::vector<size_t> smallDims = {26, 26, 255, 1};
+  
   arma::mat inputData;
   ImageInfo inputInfo;
-
+  
   arma::mat letterboxedInput;
   ImageInfo letterboxedInputInfo(416, 416, 3);
   arma::mat modelInput;
-
-  arma::mat modelOutput;
-
+ 
+  arma::mat largeOutput;
+  arma::mat smallOutput;
   load(inputFile, inputData, inputInfo);
-  
+
   letterbox(inputData, inputInfo, letterboxedInput, letterboxedInputInfo);
   columnMajorLayout(letterboxedInput, letterboxedInputInfo, modelInput);
+  
+  mlpack::models::YoloV3Tiny<arma::mat> model(anchors);
+  model.printModel();
+  model.Predict(modelInput, largeOutput, smallOutput);
 
+  std::vector<detection> detections;
 
-  std::vector<size_t> anchors = { 10, 14, 23, 27, 37, 58, 81, 82, 135, 169, 344, 319 };
-  // mlpack::models::YoloV3Tiny<arma::mat> model;
-  // model.printModel();
-  // model.Predict(modelInput, modelOutput);
-  //
-  // std::vector<detection> detections = getDetections(modelOutput, {13, 13, 255}, ignoreThresh);//there should be  3 * 13 * 13 (large only)
+  using Anchors = std::vector<std::pair<size_t, size_t>>;
+  Anchors largeAnchors = Anchors(anchors.begin()+3, anchors.end());
+  getDetections(largeOutput, 
+                detections,
+                largeDims,
+                largeAnchors,
+                letterboxedInputInfo.Width(),
+                letterboxedInputInfo.Height(),
+                inputInfo.Width(),
+                inputInfo.Height(),
+                ignoreThresh);
 
-  // box a = { 0, 0, 100, 100 };
-  // box b = { 50, 50, 100, 100 };
-  // box c = { 0, 50, 100, 100 };
-  detection a = { {50, 50, 100, 100}, {0.5, 0.75, 0.25}, 0.5};
-  detection b = { {100, 100, 100, 100}, {0.85, 0.75, 0.30}, 0.9};
-  detection c = { {50, 100, 100, 100}, {0.15, 0.45, 0.20}, 0.2};
+  Anchors smallAnchors = Anchors(anchors.begin(), anchors.begin()+3);
+  getDetections(smallOutput, 
+                detections,
+                smallDims,
+                smallAnchors,
+                letterboxedInputInfo.Width(),
+                letterboxedInputInfo.Height(),
+                inputInfo.Width(),
+                inputInfo.Height(),
+                ignoreThresh);
 
-  std::vector<detection> d = { a, b, c };
-  nms(d, 3, .4);
+  std::cout << "detections length: " << detections.size() << "\n";
 
-  for (auto &det : d) {
-    std::cout << det.objectness << "\n";
-  }
+  arma::mat columnMajorInputData;
+  columnMajorLayout(inputData, inputInfo, columnMajorInputData);
 
-  // arma::mat columnMajorInput;
-  // arma::mat finalOutput;
-  // columnMajorLayout(inputData, inputInfo, columnMajorInput);
-  // drawBoundingBox(columnMajorInput, inputInfo, b, 5);
-  // imageLayout(columnMajorInput, inputInfo, finalOutput);
-  // save(outputFile, finalOutput, inputInfo);
+  box& b = detections[0].boundingBox;
+  std::cout << "First detection: " << b.x << ", " << b.y << ", " << b.w << ", " << b.h << "\n";
+
+  drawDetections(columnMajorInputData, inputInfo, detections, maxObjects);
+  imageLayout(columnMajorInputData, inputInfo, inputData);
+  save(outputFile, inputData, inputInfo);
   return 0;
 }
