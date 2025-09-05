@@ -8,21 +8,22 @@
 using namespace mlpack;
 using namespace arma;
 
-void loadImage(const std::string& file, mat& data, data::ImageInfo& info)
+void loadImage(const std::string& file, data::ImageInfo& info, mat& data)
 {
   Load(file, data, info, true);
   data /= 255.0f;
 }
 
-void saveImage(const std::string& file, mat data, data::ImageInfo& info)
+void saveImage(const std::string& file, data::ImageInfo& info, mat data)
 {
   data *= 255;
   Save(file, data, info, true);
 }
 
-mat resizeImage(const mat& oldImage,
-                const data::ImageInfo& oldInfo,
-                const data::ImageInfo& resizedInfo)
+void resizeImage(const data::ImageInfo& oldInfo,
+                 const mat& oldImage,
+                 const data::ImageInfo& resizedInfo,
+                 mat& resizedImage)
 {
   size_t newWidth = resizedInfo.Width();
   size_t newHeight = resizedInfo.Height();
@@ -30,16 +31,15 @@ mat resizeImage(const mat& oldImage,
   size_t oldWidth = oldInfo.Width();
   size_t oldHeight = oldInfo.Height();
 
-  assert(oldImage.n_rows == oldWidth * oldInfo.Height() * 3 && oldImage.n_cols == 1);
-  assert(oldInfo.Channels() == 3);
-  assert(resizedInfo.Channels() == 3);
-  // assert(newWidth > 1 && newHeight > 1); // TODO: WHY?
+  // TODO: use throw instead?
+  assert(oldImage.n_rows == oldWidth * oldHeight * 3 && oldImage.n_cols == 1);
+  assert(oldInfo.Channels() == 3 && resizedInfo.Channels() == 3);
 
-  mat resizedImage(newWidth * newHeight * 3, 1);
-  // newInfo = data::ImageInfo(newWidth, newHeight, 3); // ??
+  resizedImage.clear();
+  resizedImage = mat(newWidth * newHeight * 3, 1);
 
   double xRatio = (double)(oldWidth - 1) / (newWidth - 1);
-  double yRatio = (double)(oldInfo.Height() - 1) / (newHeight - 1);
+  double yRatio = (double)(oldHeight - 1) / (newHeight - 1);
 
   for (size_t channel = 0; channel < 3; channel++)
   {
@@ -71,27 +71,31 @@ mat resizeImage(const mat& oldImage,
       }
     }
   }
-  return resizedImage;
 }
 
-void embed(arma::Mat<double>& source,
-           data::ImageInfo& sourceInfo,
-           arma::Mat<double>& dest,
-           data::ImageInfo& destInfo,
-           size_t dx,
-           size_t dy) {
+void embedImage(mat& source, data::ImageInfo& sourceInfo, mat& dest,
+                data::ImageInfo& destInfo, size_t dx, size_t dy) {
 
   assert(sourceInfo.Channels() == destInfo.Channels());
   size_t width = std::min(sourceInfo.Width() + dx, destInfo.Width());
   size_t height = std::min(sourceInfo.Height() + dy, destInfo.Height());
 
-  for (size_t c = 0; c < sourceInfo.Channels(); c++) {
-    for (size_t i = 0; i < sourceInfo.Width(); i++) {
-      if (dx + i > destInfo.Width()) break;
-      for (size_t j = 0; j < sourceInfo.Height(); j++) {
-        if (dy + j > destInfo.Height()) break;
-        size_t sourceIndex = j*sourceInfo.Channels()*sourceInfo.Width() + i * sourceInfo.Channels() + c;
-        size_t destIndex = (j + dy)*destInfo.Channels()*destInfo.Width() + (i + dx) * destInfo.Channels() + c;
+  for (size_t c = 0; c < sourceInfo.Channels(); c++)
+  {
+    for (size_t i = 0; i < sourceInfo.Width(); i++)
+    {
+      if (dx + i > destInfo.Width())
+        break;
+
+      for (size_t j = 0; j < sourceInfo.Height(); j++)
+      {
+        if (dy + j > destInfo.Height())
+          break;
+
+        size_t sourceIndex = j * sourceInfo.Channels() * sourceInfo.Width() +
+          i * sourceInfo.Channels() + c;
+        size_t destIndex = (j + dy) * destInfo.Channels() * destInfo.Width() +
+          (i + dx) * destInfo.Channels() + c;
         dest.at(destIndex) = source.at(sourceIndex);
       }
     }
@@ -103,27 +107,30 @@ void letterbox(arma::Mat<double>&source,
                arma::Mat<double>& dest,
                data::ImageInfo& destInfo) {
   size_t width, height;
-  if (destInfo.Width() / sourceInfo.Width() > destInfo.Height() / sourceInfo.Height()) {
+  if (destInfo.Width() / sourceInfo.Width() > destInfo.Height() / sourceInfo.Height())
+  {
     height = destInfo.Height();
     width = sourceInfo.Width() * destInfo.Height() / sourceInfo.Height();
-  } else {
+  }
+  else
+  {
     width = destInfo.Width();
     height = sourceInfo.Height() * destInfo.Width() / sourceInfo.Width();
   }
 
   data::ImageInfo resizedInfo(width, height, 3);
-  arma::Mat<double> resized = resizeImage(source, sourceInfo, resizedInfo);
+  // arma::Mat<double> resized = resizeImage(source, sourceInfo, resizedInfo);
 
   dest = arma::Mat<double>(destInfo.Width() * destInfo.Height() * destInfo.Channels(), 1);
   dest.fill(.3);
-  embed(resized, resizedInfo, dest, destInfo, (destInfo.Width() - width)/2, (destInfo.Height() - height)/2);
+  // embedImage(resized, resizedInfo, dest, destInfo, (destInfo.Width() - width)/2, (destInfo.Height() - height)/2);
 }
 
-void tile(arma::Mat<double>& a,
+void tile(mat& a,
           data::ImageInfo aInfo,
-          arma::Mat<double>& b,
+          mat& b,
           data::ImageInfo& bInfo,
-          arma::Mat<double>& output,
+          mat& output,
           data::ImageInfo& outputInfo,
           size_t dx) {
   assert(aInfo.Channels() == bInfo.Channels());
@@ -132,8 +139,8 @@ void tile(arma::Mat<double>& a,
   output = arma::Mat<double>(width * height * aInfo.Channels(), 1);
   outputInfo = data::ImageInfo(width, height, aInfo.Channels());
   output.fill(1.0f);
-  embed(a, aInfo, output, outputInfo, 0, 0);
-  embed(b, bInfo, output, outputInfo, aInfo.Width()+dx, 0);
+  embedImage(a, aInfo, output, outputInfo, 0, 0);
+  embedImage(b, bInfo, output, outputInfo, aInfo.Width()+dx, 0);
 }
 
 void border(arma::Mat<double>& source,
@@ -144,7 +151,7 @@ void border(arma::Mat<double>& source,
   destInfo = data::ImageInfo(sourceInfo.Width() + 2 * borderSize, sourceInfo.Height() + 2 * borderSize, sourceInfo.Channels());
   dest = arma::Mat<double>(destInfo.Width() * destInfo.Height() * destInfo.Channels(), 1);
   dest.fill(1.0f);
-  embed(source, sourceInfo, dest, destInfo, borderSize, borderSize);
+  // embed(source, sourceInfo, dest, destInfo, borderSize, borderSize);
 }
 
 double lineOverlap(double a, double aw, double b, double bw) {
@@ -353,54 +360,60 @@ int main(void) {
   const std::string inputFile = "input.jpg";
   const std::string outputFile = "output.jpg";
 
-  double ignoreThresh = 0.5f;
-  std::vector<std::pair<size_t, size_t>> anchors = {
-    {10, 14},
-    {23, 27},
-    {37, 58},
-    {81, 82},
-    {135, 169},
-    {344, 319}
-  };
-  size_t maxObjects = 1;
+  data::ImageInfo info;
+  mat image;
 
-  std::vector<size_t> largeDims = {13, 13, 255, 1};
-  std::vector<size_t> smallDims = {26, 26, 255, 1};
+  data::ImageInfo newInfo(416, 416, 3);
+  mat newImage;
 
-  mat inputData;
-  data::ImageInfo inputInfo;
+  loadImage(inputFile, info, image);
+  resizeImage(info, image, newInfo, newImage);
+  saveImage(outputFile, newInfo, newImage);
 
-  mat letterboxedInput;
-  data::ImageInfo letterboxedInputInfo(416, 416, 3);
-  mat modelInput;
-
-  mat largeOutput;
-  mat smallOutput;
-  load(inputFile, inputData, inputInfo);
-
-  letterbox(inputData, inputInfo, letterboxedInput, letterboxedInputInfo);
-  columnMajorLayout(letterboxedInput, letterboxedInputInfo, modelInput);
-
-  // mlpack::models::YoloV3Tiny<arma::mat> model(anchors);
-  // model.printModel();
-  // model.Predict(modelInput, largeOutput, smallOutput);
-
-  std::vector<detection> detections;
-
-  using Anchors = std::vector<std::pair<size_t, size_t>>;
-  Anchors largeAnchors = Anchors(anchors.begin()+3, anchors.end());
-  Anchors smallAnchors = Anchors(anchors.begin(), anchors.begin()+3);
-
-  std::cout << "detections length: " << detections.size() << "\n";
-
-  arma::mat columnMajorInputData;
-  columnMajorLayout(inputData, inputInfo, columnMajorInputData);
-
-  box& b = detections[0].boundingBox;
-  std::cout << "First detection: " << b.x << ", " << b.y << ", " << b.w << ", " << b.h << "\n";
-
-  drawDetections(columnMajorInputData, inputInfo, detections, maxObjects);
-  imageLayout(columnMajorInputData, inputInfo, inputData);
-  save(outputFile, inputData, inputInfo);
-  return 0;
+  // double ignoreThresh = 0.5f;
+  // std::vector<std::pair<size_t, size_t>> anchors = {
+  //   {10, 14},
+  //   {23, 27},
+  //   {37, 58},
+  //   {81, 82},
+  //   {135, 169},
+  //   {344, 319}
+  // };
+  // size_t maxObjects = 1;
+  //
+  // std::vector<size_t> largeDims = {13, 13, 255, 1};
+  // std::vector<size_t> smallDims = {26, 26, 255, 1};
+  //
+  // mat inputData;
+  // data::ImageInfo inputInfo;
+  //
+  // mat letterboxedInput;
+  // data::ImageInfo letterboxedInputInfo(416, 416, 3);
+  // mat modelInput;
+  //
+  // mat largeOutput;
+  // mat smallOutput;
+  // load(inputFile, inputData, inputInfo);
+  //
+  // letterbox(inputData, inputInfo, letterboxedInput, letterboxedInputInfo);
+  // columnMajorLayout(letterboxedInput, letterboxedInputInfo, modelInput);
+  //
+  // std::vector<detection> detections;
+  //
+  // using Anchors = std::vector<std::pair<size_t, size_t>>;
+  // Anchors largeAnchors = Anchors(anchors.begin()+3, anchors.end());
+  // Anchors smallAnchors = Anchors(anchors.begin(), anchors.begin()+3);
+  //
+  // std::cout << "detections length: " << detections.size() << "\n";
+  //
+  // arma::mat columnMajorInputData;
+  // columnMajorLayout(inputData, inputInfo, columnMajorInputData);
+  //
+  // box& b = detections[0].boundingBox;
+  // std::cout << "First detection: " << b.x << ", " << b.y << ", " << b.w << ", " << b.h << "\n";
+  //
+  // drawDetections(columnMajorInputData, inputInfo, detections, maxObjects);
+  // imageLayout(columnMajorInputData, inputInfo, inputData);
+  // save(outputFile, inputData, inputInfo);
+  // return 0;
 }
