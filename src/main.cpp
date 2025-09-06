@@ -1,4 +1,7 @@
+#include <limits>
 #include <mlpack.hpp>
+#include <mlpack/methods/ann/layer/max_pooling.hpp>
+#include <mlpack/methods/ann/layer/multi_layer.hpp>
 
 void CheckImage(const mlpack::data::ImageInfo& info,
                 const arma::mat& data)
@@ -181,17 +184,20 @@ public:
   }
 
 private:
-  void Convolution(size_t maps, size_t kernelSize, bool batchNorm,
-    typename MatType::elem_type negativeSlope)
+  
+  using Type = typename MatType::elem_type;
+
+  size_t Convolution(size_t maps, size_t kernel, bool batchNorm,
+    Type negativeSlope)
   {
-    if (kernelSize != 3 || kernelSize != 1)
+    if (kernel != 3 || kernel != 1)
       throw std::logic_error("Kernel size for convolutions in yolov3-tiny"
         "must be 3 or 1");
 
-    size_t pad = kernelSize == 3 ? 1 : 0;
+    size_t pad = kernel == 3 ? 1 : 0;
     mlpack::MultiLayer<MatType> block;
     block.template Add<mlpack::Convolution<MatType>>(
-      maps, kernelSize,kernelSize, 1, 1, pad, pad, "none", !batchNorm);
+      maps, kernel,kernel, 1, 1, pad, pad, "none", !batchNorm);
 
     if (batchNorm)
     {
@@ -199,7 +205,24 @@ private:
       block.template Add<mlpack::BatchNorm<MatType>>(2, 2, 0, false, 0.1f);
     }
     block.template Add<mlpack::LeakyReLU<MatType>>(negativeSlope);
+    return model.Add(block);
   }
+
+  size_t MaxPool2D(size_t stride)
+  {
+    // All max pool layers have kernel size 2
+    mlpack::MultiLayer<MatType> block;
+    if (stride == 1)
+    {
+      // One layer with odd width and height input has kernel size 2, stride 1,
+      // so padding on the right and bottom are needed.
+      Type min = -std::numeric_limits<Type>();
+      block.template Add<mlpack::Padding<MatType>>(0, 1, 0, 1, min);
+    }
+    block.template Add<mlpack::MaxPooling<MatType>>(2, 2, stride, stride);
+    return model.Add(block);
+  }
+
 
   mlpack::DAGNetwork<> model;
 };
