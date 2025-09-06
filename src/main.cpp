@@ -1,7 +1,6 @@
-#include <limits>
+// TODO: add citation to paper
+
 #include <mlpack.hpp>
-#include <mlpack/methods/ann/layer/max_pooling.hpp>
-#include <mlpack/methods/ann/layer/multi_layer.hpp>
 
 void CheckImage(const mlpack::data::ImageInfo& info,
                 const arma::mat& data)
@@ -178,17 +177,94 @@ double lineOverlap(double a, double aw, double b, double bw) {
 template <typename MatType = arma::mat>
 class yolov3tiny {
 public:
-  yolov3tiny()
+  yolov3tiny(size_t width, size_t height, size_t classes) :
+    width(width), height(height), classes(classes)
   {
+    // x, y, w, h, objectness score, n classes (COCO = 80)
+    attributes = 5 + classes;
+    scale = { 2.0, 2.0 };
+
     model = mlpack::DAGNetwork();
+    model.SetNetworkMode(false);
+    model.InputDimensions() = { width, height, 3 };
+
+    size_t convolution0 = Convolution(16, 3);
+    size_t maxPool1 = MaxPool2D(2);
+    size_t convolution2 = Convolution(32, 3);
+    size_t maxPool3 = MaxPool2D(2);
+    size_t convolution4 = Convolution(64, 3);
+    size_t maxPool5 = MaxPool2D(2);
+    size_t convolution6 = Convolution(128, 3);
+    size_t maxPool7 = MaxPool2D(2);
+    size_t convolution8 = Convolution(256, 3);
+    size_t maxPool9 = MaxPool2D(2);
+    size_t convolution10 = Convolution(512, 3);
+    size_t maxPool11 = MaxPool2D(1);
+    size_t convolution12 = Convolution(1024, 3);
+    size_t convolution13 = Convolution(256, 1);
+
+    // Detection head for larger objects.
+    size_t convolution14 = Convolution(512, 3);
+    size_t convolution15 = Convolution(3 * attributes, 1, false);
+    size_t detections16 = YOLO();
+
+    size_t convolution17 = Convolution(128, 1);
+    // Upsample for more fine-grained detections.
+    size_t upsample18 = model.Add<mlpack::NearestInterpolation<MatType>>(scale);
+
+    // Detection head for smaller objects.
+    size_t convolution19 = Convolution(256, 3);
+    size_t convolution20 = Convolution(3 * attributes, 1, false);
+    size_t detections21 = YOLO();
+
+    // the DAGNetwork class requires a layer for concatenations, so we use
+    // the Identity layer for pure concatentation, and no other compute.
+    size_t concatLayer22 = model.Add<mlpack::Identity<MatType>>();
+
+    model.Connect(convolution0, maxPool1);
+    model.Connect(maxPool1, convolution2);
+    model.Connect(convolution2, maxPool3);
+    model.Connect(maxPool3, convolution4);
+    model.Connect(convolution4, maxPool5);
+    model.Connect(maxPool5, convolution6);
+    model.Connect(convolution6, maxPool7);
+    model.Connect(maxPool7, convolution8);
+
+    model.Connect(convolution8, maxPool9);
+    model.Connect(maxPool9, convolution10);
+    model.Connect(convolution10, maxPool11);
+    model.Connect(maxPool11, convolution12);
+    model.Connect(convolution12, convolution13);
+
+    model.Connect(convolution13, convolution14);
+    model.Connect(convolution14, convolution15);
+    model.Connect(convolution15, detections16);
+
+    model.Connect(convolution13, convolution17);
+    model.Connect(convolution17, upsample18);
+
+    // Concat convolution8 + upsample18 => convolution19
+    model.Connect(upsample18, convolution19); // TODO: double check order
+    model.Connect(convolution8, convolution19);
+    // Set axis not necessary, since default is channels.
+
+    model.Connect(convolution19, convolution20);
+    model.Connect(convolution20, detections21);
+    // Again, set axis not necessary, since default is channels.
+ 
+    // Concatenation order shouldn't matter.
+    model.Connect(detections16, concatLayer22);
+    model.Connect(detections21, concatLayer22);
+
+    model.Reset();
   }
 
 private:
-  
+
   using Type = typename MatType::elem_type;
 
-  size_t Convolution(size_t maps, size_t kernel, bool batchNorm,
-    Type negativeSlope)
+  size_t Convolution(size_t maps, size_t kernel, bool batchNorm = true,
+    Type reluSlope = 0.1)
   {
     if (kernel != 3 || kernel != 1)
       throw std::logic_error("Kernel size for convolutions in yolov3-tiny"
@@ -204,7 +280,7 @@ private:
       // set epsilon to zero, couldn't find it used in darknet/ggml.
       block.template Add<mlpack::BatchNorm<MatType>>(2, 2, 0, false, 0.1f);
     }
-    block.template Add<mlpack::LeakyReLU<MatType>>(negativeSlope);
+    block.template Add<mlpack::LeakyReLU<MatType>>(reluSlope);
     return model.Add(block);
   }
 
@@ -223,6 +299,16 @@ private:
     return model.Add(block);
   }
 
+  size_t YOLO() {
+    return model.Add<mlpack::Identity<MatType>>();
+  }
+
+
+  size_t width;
+  size_t height;
+  size_t classes;
+  size_t attributes;
+  std::vector<double> scale;
 
   mlpack::DAGNetwork<> model;
 };
