@@ -36,7 +36,7 @@ void SaveImage(const std::string& file,
 /*
  *  Resizes an image using `resizedInfo`.
  */
-void resizeImage(const mlpack::data::ImageInfo& oldInfo,
+void ResizeImage(const mlpack::data::ImageInfo& oldInfo,
                  const arma::mat& oldImage,
                  const mlpack::data::ImageInfo& resizedInfo,
                  arma::mat& resizedImage)
@@ -48,7 +48,6 @@ void resizeImage(const mlpack::data::ImageInfo& oldInfo,
   size_t oldHeight = oldInfo.Height();
 
   CheckImage(oldInfo, oldImage);
-  CheckImage(resizedInfo, resizedImage);
 
   if (oldInfo.Channels() != resizedInfo.Channels())
   {
@@ -123,12 +122,12 @@ void EmbedImage(const mlpack::data::ImageInfo& srcInfo, const arma::mat& src,
   {
     for (size_t i = 0; i < srcInfo.Width(); i++)
     {
-      if (dx + i > dstInfo.Width())
+      if (dx + i >= dstInfo.Width())
         break;
 
       for (size_t j = 0; j < srcInfo.Height(); j++)
       {
-        if (dy + j > dstInfo.Height())
+        if (dy + j >= dstInfo.Height())
           break;
 
         size_t sourceIndex = j * srcInfo.Channels() * srcInfo.Width() +
@@ -141,28 +140,44 @@ void EmbedImage(const mlpack::data::ImageInfo& srcInfo, const arma::mat& src,
   }
 }
 
-void letterbox(arma::Mat<double>&source,
-               mlpack::data::ImageInfo sourceInfo,
-               arma::Mat<double>& dest,
-               mlpack::data::ImageInfo& destInfo) {
+/*
+ *  Embed `src` within `dst` based on
+ *
+ *  The original yolov3-tiny model trained by Redmon et al. used this method
+ *  of resizing images to keep them within 416x416 but also keeping
+ *  the aspect ratio of the original image, instead of simply resizing
+ *  to 416x416.
+ *
+ *  XXX: The original model was trained on images whose blank
+ *  space was filled with the rgb value (0.5, 0.5, 0.5). If inference
+ *  is done with the same weights and other gray values, this may worsen
+ *  the results of the network.
+ */
+void LetterBox(const mlpack::data::ImageInfo& srcInfo, const arma::mat& src,
+               const mlpack::data::ImageInfo& dstInfo, arma::mat& dst,
+               const double grayValue = 0.5)
+{
+  CheckImage(srcInfo, src);
+  CheckImage(dstInfo, dst);
+
   size_t width, height;
-  if (destInfo.Width() / sourceInfo.Width() > destInfo.Height() / sourceInfo.Height())
+  if (dstInfo.Width() / srcInfo.Width() > dstInfo.Height() / srcInfo.Height())
   {
-    height = destInfo.Height();
-    width = sourceInfo.Width() * destInfo.Height() / sourceInfo.Height();
+    height = dstInfo.Height();
+    width = srcInfo.Width() * dstInfo.Height() / srcInfo.Height();
   }
   else
   {
-    width = destInfo.Width();
-    height = sourceInfo.Height() * destInfo.Width() / sourceInfo.Width();
+    width = dstInfo.Width();
+    height = srcInfo.Height() * dstInfo.Width() / srcInfo.Width();
   }
 
-  mlpack::data::ImageInfo resizedInfo(width, height, 3);
-  // arma::Mat<double> resized = resizeImage(source, sourceInfo, resizedInfo);
-
-  dest = arma::Mat<double>(destInfo.Width() * destInfo.Height() * destInfo.Channels(), 1);
-  dest.fill(.3);
-  // embedImage(resized, resizedInfo, dest, destInfo, (destInfo.Width() - width)/2, (destInfo.Height() - height)/2);
+  dst.fill(grayValue);
+  arma::mat resizedSrc;
+  mlpack::data::ImageInfo resizedInfo(width, height, srcInfo.Channels());
+  ResizeImage(srcInfo, src, resizedInfo, resizedSrc);
+  EmbedImage(resizedInfo, resizedSrc, dstInfo, dst, (dstInfo.Width() - width)/2,
+    (dstInfo.Height() - height)/2);
 }
 
 void tile(arma::mat& a,
@@ -396,19 +411,18 @@ void drawDetections(arma::mat& imageData, mlpack::data::ImageInfo& imageInfo, st
 }
 
 int main(void) {
-  const std::string inputFile = "input.jpg";
+  const std::string inputFile = "./images/dog.jpg";
   const std::string outputFile = "output.jpg";
 
   mlpack::data::ImageInfo info;
   arma::mat image;
 
-  mlpack::data::ImageInfo newInfo(800, 800, 3);
+  mlpack::data::ImageInfo newInfo(416, 416, 3);
   arma::mat newImage;
-  newImage.set_size(800 * 800 * 3, 1);
-  newImage.fill(0.2);
+  newImage.resize(newInfo.Width() * newInfo.Height() * 3, 1);
 
   LoadImage(inputFile, info, image);
-  EmbedImage(info, image, newInfo, newImage, 300, 200);
+  LetterBox(info, image, newInfo, newImage);
   SaveImage(outputFile, newInfo, newImage);
 
   // double ignoreThresh = 0.5f;
