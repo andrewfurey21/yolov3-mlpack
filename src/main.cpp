@@ -1,4 +1,5 @@
 #include <mlpack.hpp>
+#include <stdexcept>
 
 void CheckImage(const mlpack::data::ImageInfo& info,
                 const arma::mat& data)
@@ -49,15 +50,6 @@ void ResizeImage(const mlpack::data::ImageInfo& oldInfo,
 
   CheckImage(oldInfo, oldImage);
 
-  if (oldInfo.Channels() != resizedInfo.Channels())
-  {
-    std::ostringstream errMessage;
-    errMessage << "Number of channels do not match: "
-               << oldInfo.Channels() << " != "
-               << resizedInfo.Channels() << "\n";
-    throw std::logic_error(errMessage.str());
-  }
-
   resizedImage.clear();
   resizedImage = arma::mat(newWidth * newHeight * 3, 1);
 
@@ -106,15 +98,6 @@ void EmbedImage(const mlpack::data::ImageInfo& srcInfo, const arma::mat& src,
   CheckImage(srcInfo, src);
   CheckImage(dstInfo, dst);
 
-  if (srcInfo.Channels() != dstInfo.Channels())
-  {
-    std::ostringstream errMessage;
-    errMessage << "Number of channels do not match: "
-               << srcInfo.Channels() << " != "
-               << dstInfo.Channels() << "\n";
-    throw std::logic_error(errMessage.str());
-  }
-
   size_t width = std::min(srcInfo.Width() + dx, dstInfo.Width());
   size_t height = std::min(srcInfo.Height() + dy, dstInfo.Height());
 
@@ -141,7 +124,8 @@ void EmbedImage(const mlpack::data::ImageInfo& srcInfo, const arma::mat& src,
 }
 
 /*
- *  Embed `src` within `dst` based on
+ *  Resize `src` to a square image such that the aspect ratio is the same.
+ *  Blank space will then be filled in with `grayValue`.
  *
  *  The original yolov3-tiny model trained by Redmon et al. used this method
  *  of resizing images to keep them within 416x416 but also keeping
@@ -150,7 +134,7 @@ void EmbedImage(const mlpack::data::ImageInfo& srcInfo, const arma::mat& src,
  *
  *  XXX: The original model was trained on images whose blank
  *  space was filled with the rgb value (0.5, 0.5, 0.5). If inference
- *  is done with the same weights and other gray values, this may worsen
+ *  is done with the same weights and other gray values, this will worsen
  *  the results of the network.
  */
 void LetterBox(const mlpack::data::ImageInfo& srcInfo, const arma::mat& src,
@@ -180,34 +164,10 @@ void LetterBox(const mlpack::data::ImageInfo& srcInfo, const arma::mat& src,
     (dstInfo.Height() - height)/2);
 }
 
-void tile(arma::mat& a,
-          mlpack::data::ImageInfo aInfo,
-          arma::mat& b,
-          mlpack::data::ImageInfo& bInfo,
-          arma::mat& output,
-          mlpack::data::ImageInfo& outputInfo,
-          size_t dx) {
-  assert(aInfo.Channels() == bInfo.Channels());
-  size_t height = std::max(aInfo.Height(), bInfo.Height());
-  size_t width = dx + aInfo.Width() + bInfo.Width();
-  output = arma::Mat<double>(width * height * aInfo.Channels(), 1);
-  outputInfo = mlpack::data::ImageInfo(width, height, aInfo.Channels());
-  output.fill(1.0f);
-  // embedImage(a, aInfo, output, outputInfo, 0, 0);
-  // embedImage(b, bInfo, output, outputInfo, aInfo.Width()+dx, 0);
-}
-
-void border(arma::Mat<double>& source,
-            mlpack::data::ImageInfo sourceInfo,
-            arma::Mat<double>& dest,
-            mlpack::data::ImageInfo& destInfo,
-            size_t borderSize) {
-  destInfo = mlpack::data::ImageInfo(sourceInfo.Width() + 2 * borderSize, sourceInfo.Height() + 2 * borderSize, sourceInfo.Channels());
-  dest = arma::Mat<double>(destInfo.Width() * destInfo.Height() * destInfo.Channels(), 1);
-  dest.fill(1.0f);
-  // embed(source, sourceInfo, dest, destInfo, borderSize, borderSize);
-}
-
+/*
+ *  Return how much a vertical or horizontal line overlap, where `a` and `b` are
+ *  mid-points and `aw` and `bw` are widths/heights of those lines.
+ */
 double lineOverlap(double a, double aw, double b, double bw) {
   return std::abs(std::max(a - aw/2, b - bw/2) - std::min(a + aw/2, b + bw/2));
 }
