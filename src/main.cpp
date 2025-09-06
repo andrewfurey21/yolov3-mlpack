@@ -1,31 +1,45 @@
-#include <stdlib.h>
-#include <stdio.h>
-#include <string.h>
-
 #include <mlpack.hpp>
-#include <armadillo>
 
-using namespace mlpack;
-using namespace arma;
+void CheckImage(const mlpack::data::ImageInfo& info,
+                const arma::mat& data)
+{
+  if (data.n_rows != info.Width() * info.Height() * info.Channels() ||
+    data.n_cols != 1 || info.Channels() != 3)
+  {
+    throw std::logic_error("Image is the incorrect shape.");
+  }
+}
 
-// TODO: add some docs
-
-void loadImage(const std::string& file, data::ImageInfo& info, mat& data)
+/*
+ *  Loads an image and normalizes it values.
+ */
+void LoadImage(const std::string& file,
+               mlpack::data::ImageInfo& info,
+               arma::mat& data)
 {
   Load(file, data, info, true);
   data /= 255.0f;
 }
 
-void saveImage(const std::string& file, data::ImageInfo& info, mat data)
+/*
+ *  Saves an image back, converting the RGB values from the range 0-1 to 0-255.
+ */
+void SaveImage(const std::string& file,
+               mlpack::data::ImageInfo& info,
+               arma::mat data)
 {
+  CheckImage(info, data);
   data *= 255;
   Save(file, data, info, true);
 }
 
-void resizeImage(const data::ImageInfo& oldInfo,
-                 const mat& oldImage,
-                 const data::ImageInfo& resizedInfo,
-                 mat& resizedImage)
+/*
+ *  Resizes an image using `resizedInfo`.
+ */
+void resizeImage(const mlpack::data::ImageInfo& oldInfo,
+                 const arma::mat& oldImage,
+                 const mlpack::data::ImageInfo& resizedInfo,
+                 arma::mat& resizedImage)
 {
   size_t newWidth = resizedInfo.Width();
   size_t newHeight = resizedInfo.Height();
@@ -33,12 +47,20 @@ void resizeImage(const data::ImageInfo& oldInfo,
   size_t oldWidth = oldInfo.Width();
   size_t oldHeight = oldInfo.Height();
 
-  // TODO: use throw instead?
-  assert(oldImage.n_rows == oldWidth * oldHeight * 3 && oldImage.n_cols == 1);
-  assert(oldInfo.Channels() == 3 && resizedInfo.Channels() == 3);
+  CheckImage(oldInfo, oldImage);
+  CheckImage(resizedInfo, resizedImage);
+
+  if (oldInfo.Channels() != resizedInfo.Channels())
+  {
+    std::ostringstream errMessage;
+    errMessage << "Number of channels do not match: "
+               << oldInfo.Channels() << " != "
+               << resizedInfo.Channels() << "\n";
+    throw std::logic_error(errMessage.str());
+  }
 
   resizedImage.clear();
-  resizedImage = mat(newWidth * newHeight * 3, 1);
+  resizedImage = arma::mat(newWidth * newHeight * 3, 1);
 
   double xRatio = (double)(oldWidth - 1) / (newWidth - 1);
   double yRatio = (double)(oldHeight - 1) / (newHeight - 1);
@@ -75,39 +97,54 @@ void resizeImage(const data::ImageInfo& oldInfo,
   }
 }
 
-void embedImage(mat& source, data::ImageInfo& sourceInfo, mat& dest,
-                data::ImageInfo& destInfo, size_t dx, size_t dy) {
+/*
+ *  Embed `src` image within `dst` image starting at offset (dx, dy).
+ */
+void EmbedImage(const mlpack::data::ImageInfo& srcInfo, const arma::mat& src,
+                const mlpack::data::ImageInfo& dstInfo, arma::mat& dst,
+                const size_t dx, const size_t dy) {
 
-  assert(sourceInfo.Channels() == destInfo.Channels());
-  size_t width = std::min(sourceInfo.Width() + dx, destInfo.Width());
-  size_t height = std::min(sourceInfo.Height() + dy, destInfo.Height());
+  CheckImage(srcInfo, src);
+  CheckImage(dstInfo, dst);
 
-  for (size_t c = 0; c < sourceInfo.Channels(); c++)
+  if (srcInfo.Channels() != dstInfo.Channels())
   {
-    for (size_t i = 0; i < sourceInfo.Width(); i++)
+    std::ostringstream errMessage;
+    errMessage << "Number of channels do not match: "
+               << srcInfo.Channels() << " != "
+               << dstInfo.Channels() << "\n";
+    throw std::logic_error(errMessage.str());
+  }
+
+  size_t width = std::min(srcInfo.Width() + dx, dstInfo.Width());
+  size_t height = std::min(srcInfo.Height() + dy, dstInfo.Height());
+
+  for (size_t c = 0; c < srcInfo.Channels(); c++)
+  {
+    for (size_t i = 0; i < srcInfo.Width(); i++)
     {
-      if (dx + i > destInfo.Width())
+      if (dx + i > dstInfo.Width())
         break;
 
-      for (size_t j = 0; j < sourceInfo.Height(); j++)
+      for (size_t j = 0; j < srcInfo.Height(); j++)
       {
-        if (dy + j > destInfo.Height())
+        if (dy + j > dstInfo.Height())
           break;
 
-        size_t sourceIndex = j * sourceInfo.Channels() * sourceInfo.Width() +
-          i * sourceInfo.Channels() + c;
-        size_t destIndex = (j + dy) * destInfo.Channels() * destInfo.Width() +
-          (i + dx) * destInfo.Channels() + c;
-        dest.at(destIndex) = source.at(sourceIndex);
+        size_t sourceIndex = j * srcInfo.Channels() * srcInfo.Width() +
+          i * srcInfo.Channels() + c;
+        size_t destIndex = (j + dy) * dstInfo.Channels() * dstInfo.Width() +
+          (i + dx) * dstInfo.Channels() + c;
+        dst.at(destIndex) = src.at(sourceIndex);
       }
     }
   }
 }
 
 void letterbox(arma::Mat<double>&source,
-               data::ImageInfo sourceInfo,
+               mlpack::data::ImageInfo sourceInfo,
                arma::Mat<double>& dest,
-               data::ImageInfo& destInfo) {
+               mlpack::data::ImageInfo& destInfo) {
   size_t width, height;
   if (destInfo.Width() / sourceInfo.Width() > destInfo.Height() / sourceInfo.Height())
   {
@@ -120,7 +157,7 @@ void letterbox(arma::Mat<double>&source,
     height = sourceInfo.Height() * destInfo.Width() / sourceInfo.Width();
   }
 
-  data::ImageInfo resizedInfo(width, height, 3);
+  mlpack::data::ImageInfo resizedInfo(width, height, 3);
   // arma::Mat<double> resized = resizeImage(source, sourceInfo, resizedInfo);
 
   dest = arma::Mat<double>(destInfo.Width() * destInfo.Height() * destInfo.Channels(), 1);
@@ -128,29 +165,29 @@ void letterbox(arma::Mat<double>&source,
   // embedImage(resized, resizedInfo, dest, destInfo, (destInfo.Width() - width)/2, (destInfo.Height() - height)/2);
 }
 
-void tile(mat& a,
-          data::ImageInfo aInfo,
-          mat& b,
-          data::ImageInfo& bInfo,
-          mat& output,
-          data::ImageInfo& outputInfo,
+void tile(arma::mat& a,
+          mlpack::data::ImageInfo aInfo,
+          arma::mat& b,
+          mlpack::data::ImageInfo& bInfo,
+          arma::mat& output,
+          mlpack::data::ImageInfo& outputInfo,
           size_t dx) {
   assert(aInfo.Channels() == bInfo.Channels());
   size_t height = std::max(aInfo.Height(), bInfo.Height());
   size_t width = dx + aInfo.Width() + bInfo.Width();
   output = arma::Mat<double>(width * height * aInfo.Channels(), 1);
-  outputInfo = data::ImageInfo(width, height, aInfo.Channels());
+  outputInfo = mlpack::data::ImageInfo(width, height, aInfo.Channels());
   output.fill(1.0f);
-  embedImage(a, aInfo, output, outputInfo, 0, 0);
-  embedImage(b, bInfo, output, outputInfo, aInfo.Width()+dx, 0);
+  // embedImage(a, aInfo, output, outputInfo, 0, 0);
+  // embedImage(b, bInfo, output, outputInfo, aInfo.Width()+dx, 0);
 }
 
 void border(arma::Mat<double>& source,
-            data::ImageInfo sourceInfo,
+            mlpack::data::ImageInfo sourceInfo,
             arma::Mat<double>& dest,
-            data::ImageInfo& destInfo,
+            mlpack::data::ImageInfo& destInfo,
             size_t borderSize) {
-  destInfo = data::ImageInfo(sourceInfo.Width() + 2 * borderSize, sourceInfo.Height() + 2 * borderSize, sourceInfo.Channels());
+  destInfo = mlpack::data::ImageInfo(sourceInfo.Width() + 2 * borderSize, sourceInfo.Height() + 2 * borderSize, sourceInfo.Channels());
   dest = arma::Mat<double>(destInfo.Width() * destInfo.Height() * destInfo.Channels(), 1);
   dest.fill(1.0f);
   // embed(source, sourceInfo, dest, destInfo, borderSize, borderSize);
@@ -275,7 +312,7 @@ void getDetections(arma::mat& output,
   }
 }
 
-void columnMajorLayout(const arma::mat &src, const data::ImageInfo &info, arma::mat &dest) {
+void columnMajorLayout(const arma::mat &src, const mlpack::data::ImageInfo &info, arma::mat &dest) {
   size_t width = info.Width();
   size_t height = info.Height();
   size_t channels = info.Channels();
@@ -290,7 +327,7 @@ void columnMajorLayout(const arma::mat &src, const data::ImageInfo &info, arma::
   dest = arma::mat(data);
 }
 
-void imageLayout(const arma::mat& src, const data::ImageInfo& info, arma::mat& dest) {
+void imageLayout(const arma::mat& src, const mlpack::data::ImageInfo& info, arma::mat& dest) {
   size_t width = info.Width();
   size_t height = info.Height();
   size_t channels = info.Channels();
@@ -306,7 +343,7 @@ void imageLayout(const arma::mat& src, const data::ImageInfo& info, arma::mat& d
 }
 
 // NOTE: boxes have weird values
-void drawBox(arma::mat& imageData, data::ImageInfo& imageInfo, int x1, int y1, int x2, int y2, double r) {
+void drawBox(arma::mat& imageData, mlpack::data::ImageInfo& imageInfo, int x1, int y1, int x2, int y2, double r) {
   assert(y1 <= y2);
   assert(x1 <= x2);
 
@@ -339,7 +376,7 @@ void drawBox(arma::mat& imageData, data::ImageInfo& imageInfo, int x1, int y1, i
   }
 }
 
-void drawBoundingBox(arma::mat& imageData, data::ImageInfo& imageInfo, box& bbox, size_t width) {
+void drawBoundingBox(arma::mat& imageData, mlpack::data::ImageInfo& imageInfo, box& bbox, size_t width) {
   width = std::clamp<size_t>(width, 0, 10);
 
   int x1 = bbox.x - bbox.w/2.0f;
@@ -352,7 +389,7 @@ void drawBoundingBox(arma::mat& imageData, data::ImageInfo& imageInfo, box& bbox
 }
 
 // TODO: draw labels when drawing detections
-void drawDetections(arma::mat& imageData, data::ImageInfo& imageInfo, std::vector<detection>& detections, size_t maxObjects) {
+void drawDetections(arma::mat& imageData, mlpack::data::ImageInfo& imageInfo, std::vector<detection>& detections, size_t maxObjects) {
   for (size_t i = 0; i < maxObjects && i < detections.size(); i++) {
     drawBoundingBox(imageData, imageInfo, detections[i].boundingBox, 4);
   }
@@ -362,19 +399,17 @@ int main(void) {
   const std::string inputFile = "input.jpg";
   const std::string outputFile = "output.jpg";
 
-  data::ImageInfo info;
-  mat image, gray;
-  gray.set_size(416 * 416 * 3, 1);
-  gray.fill(0.2);
+  mlpack::data::ImageInfo info;
+  arma::mat image;
 
-  data::ImageInfo newInfo(416, 416, 3);
-  mat newImage;
+  mlpack::data::ImageInfo newInfo(800, 800, 3);
+  arma::mat newImage;
+  newImage.set_size(800 * 800 * 3, 1);
+  newImage.fill(0.2);
 
-  loadImage(inputFile, info, image);
-
-  embedImage(image, info, newImage, newInfo, 0, 0);
-  // resizeImage(info, image, newInfo, newImage);
-  saveImage(outputFile, newInfo, newImage);
+  LoadImage(inputFile, info, image);
+  EmbedImage(info, image, newInfo, newImage, 300, 200);
+  SaveImage(outputFile, newInfo, newImage);
 
   // double ignoreThresh = 0.5f;
   // std::vector<std::pair<size_t, size_t>> anchors = {
@@ -391,10 +426,10 @@ int main(void) {
   // std::vector<size_t> smallDims = {26, 26, 255, 1};
   //
   // mat inputData;
-  // data::ImageInfo inputInfo;
+  // mlpack::data::ImageInfo inputInfo;
   //
   // mat letterboxedInput;
-  // data::ImageInfo letterboxedInputInfo(416, 416, 3);
+  // mlpack::data::ImageInfo letterboxedInputInfo(416, 416, 3);
   // mat modelInput;
   //
   // mat largeOutput;
