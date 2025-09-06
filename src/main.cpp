@@ -175,11 +175,98 @@ double lineOverlap(double a, double aw, double b, double bw) {
 
 
 template <typename MatType = arma::mat>
-class yolov3tiny {
-public:
-  yolov3tiny(size_t width, size_t height, size_t classes) :
+class YOLOv3Layer : public mlpack::Layer<MatType>
+{
+ public:
+  YOLOv3Layer(size_t imgSize, size_t attributes, std::vector<double> anchors) :
+    imgSize(imgSize), attributes(attributes), anchors(anchors)
+  {
+
+  }
+
+  YOLOv3Layer* Clone() const override { return new YOLOv3Layer(*this); }
+
+  void ComputeOutputDimensions() override
+  {
+    if (this->inputDimensions[0] != this->inputDimensions[1])
+      throw std::logic_error("YOLOv3Layer::ComputeOutputDimensions(): "
+        "Input dimensions must be square.");
+    gridSize = this->inputDimensions[0];
+    this->outputDimensions = { gridSize * gridSize * attributes * 3 };
+  }
+
+  void Forward(const MatType& input, MatType& output) override
+  {
+    Type stride = imgSize / (Type)(gridSize);
+    output.set_size(input.n_rows, input.n_cols);
+
+    CubeType inputCube;
+    mlpack::MakeAlias(inputCube, input, gridSize * gridSize * attributes, 3,
+      input.n_cols);
+
+    CubeType outputCube;
+    mlpack::MakeAlias(outputCube, output, gridSize * gridSize * attributes, 3,
+      output.n_cols);
+
+    CubeType xInput, xOutput;
+    mlpack::MakeAlias(xInput, inputCube, gridSize * gridSize, 3,
+      input.n_cols);
+    mlpack::MakeAlias(xOutput, outputCube, gridSize * gridSize, 3,
+      input.n_cols);
+
+    CubeType yInput, yOutput;
+    mlpack::MakeAlias(yInput, inputCube, gridSize * gridSize, 3,
+      input.n_cols);
+    mlpack::MakeAlias(yOutput, outputCube, gridSize * gridSize, 3,
+      input.n_cols, gridSize * gridSize * 3 * input.n_cols);
+
+    MatType offset = arma::regspace(0, gridSize - 1);
+
+    MatType xOffset = arma::repmat(offset, gridSize, 3);
+
+    // is there a better way? floor linspace?
+    MatType yOffset = arma::repmat(arma::vectorise(arma::repmat(offset.t(), gridSize, 1)),
+      1, 3);
+
+    xOutput = 1 / (1 + arma::exp(-xInput));
+    xOutput.each_slice() += xOffset;
+    xOutput /= stride;
+
+    yOutput = 1 / (1 + arma::exp(-yInput));
+    yOutput.each_slice() += yOffset;
+    yOutput /= stride;
+
+  }
+
+  void Backward(const MatType& input, const MatType& output,
+    const MatType& gy, MatType& g) override
+  {
+    throw std::runtime_error("YOLOv3tiny::Backward() not implemented.");
+  }
+
+ private:
+
+  using Type = typename MatType::elem_type;
+
+  using CubeType = typename GetCubeType<MatType>::type;
+
+  size_t imgSize;
+  size_t attributes;
+  size_t gridSize;
+  std::vector<double> anchors;
+
+};
+
+template <typename MatType = arma::mat>
+class YOLOv3tiny {
+ public:
+  YOLOv3tiny(size_t width, size_t height, size_t classes) :
     width(width), height(height), classes(classes)
   {
+    if (width != height)
+    {
+      throw std::logic_error("yolov3-tiny must have square input images.");
+    }
     // x, y, w, h, objectness score, n classes (COCO = 80)
     attributes = 5 + classes;
     scale = { 2.0, 2.0 };
@@ -206,7 +293,7 @@ public:
     // Detection head for larger objects.
     size_t convolution14 = Convolution(512, 3);
     size_t convolution15 = Convolution(3 * attributes, 1, false);
-    size_t detections16 = YOLO();
+    size_t detections16 = YOLO(width, { 81, 82, 135, 169, 344, 319 });
 
     size_t convolution17 = Convolution(128, 1);
     // Upsample for more fine-grained detections.
@@ -215,7 +302,7 @@ public:
     // Detection head for smaller objects.
     size_t convolution19 = Convolution(256, 3);
     size_t convolution20 = Convolution(3 * attributes, 1, false);
-    size_t detections21 = YOLO();
+    size_t detections21 = YOLO(width, { 10, 14, 23, 27, 37, 58 });
 
     // the DAGNetwork class requires a layer for concatenations, so we use
     // the Identity layer for pure concatentation, and no other compute.
@@ -259,16 +346,25 @@ public:
     model.Reset();
   }
 
-private:
+  void Predict(const MatType& input, MatType& output)
+  {
+    model.Predict(input, output);
+  }
+
+ private:
 
   using Type = typename MatType::elem_type;
 
-  size_t Convolution(size_t maps, size_t kernel, bool batchNorm = true,
-    Type reluSlope = 0.1)
+  size_t Convolution(const size_t maps, const size_t kernel,
+    const bool batchNorm = true, const Type reluSlope = 0.1)
   {
-    if (kernel != 3 || kernel != 1)
-      throw std::logic_error("Kernel size for convolutions in yolov3-tiny"
-        "must be 3 or 1");
+    if (kernel != 3 && kernel != 1)
+    {
+      std::ostringstream errMessage;
+      errMessage << "Kernel size for convolutions in yolov3-tiny must be 3"
+        "or 1, but you supplied " << kernel << ".\n";
+      throw std::logic_error(errMessage.str());
+    }
 
     size_t pad = kernel == 3 ? 1 : 0;
     mlpack::MultiLayer<MatType> block;
@@ -284,7 +380,7 @@ private:
     return model.Add(block);
   }
 
-  size_t MaxPool2D(size_t stride)
+  size_t MaxPool2D(const size_t stride)
   {
     // All max pool layers have kernel size 2
     mlpack::MultiLayer<MatType> block;
@@ -292,15 +388,15 @@ private:
     {
       // One layer with odd width and height input has kernel size 2, stride 1,
       // so padding on the right and bottom are needed.
-      Type min = -std::numeric_limits<Type>();
+      Type min = -arma::datum::inf;
       block.template Add<mlpack::Padding<MatType>>(0, 1, 0, 1, min);
     }
     block.template Add<mlpack::MaxPooling<MatType>>(2, 2, stride, stride);
     return model.Add(block);
   }
 
-  size_t YOLO() {
-    return model.Add<mlpack::Identity<MatType>>();
+  size_t YOLO(const size_t imgSize, const std::vector<double>& anchors) {
+    return model.Add<YOLOv3Layer<MatType>>(imgSize, attributes, anchors);
   }
 
 
@@ -325,8 +421,14 @@ int main(void) {
   newImage.resize(newInfo.Width() * newInfo.Height() * 3, 1);
 
   LoadImage(inputFile, info, image);
-  LetterBox(info, image, newInfo, newImage);
-  SaveImage(outputFile, newInfo, newImage);
+
+
+  arma::mat detections;
+  YOLOv3tiny model(416, 416, 80);
+  model.Predict(image, detections);
+
+  // LetterBox(info, image, newInfo, newImage);
+  // SaveImage(outputFile, newInfo, newImage);
 
   return 0;
 }
