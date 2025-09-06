@@ -181,7 +181,7 @@ public:
   }
 
 private:
-  void Convolution(size_t maps, size_t kernelSize,
+  void Convolution(size_t maps, size_t kernelSize, bool batchNorm,
     typename MatType::elem_type negativeSlope)
   {
     if (kernelSize != 3 || kernelSize != 1)
@@ -191,10 +191,13 @@ private:
     size_t pad = kernelSize == 3 ? 1 : 0;
     mlpack::MultiLayer<MatType> block;
     block.template Add<mlpack::Convolution<MatType>>(
-      maps, kernelSize,kernelSize, 1, 1, pad, pad, "none", false);
+      maps, kernelSize,kernelSize, 1, 1, pad, pad, "none", !batchNorm);
 
-    // set epsilon to zero, couldn't find it used in darknet/ggml.
-    block.template Add<mlpack::BatchNorm<MatType>>(2, 2, 0, false, 0.1f);
+    if (batchNorm)
+    {
+      // set epsilon to zero, couldn't find it used in darknet/ggml.
+      block.template Add<mlpack::BatchNorm<MatType>>(2, 2, 0, false, 0.1f);
+    }
     block.template Add<mlpack::LeakyReLU<MatType>>(negativeSlope);
   }
 
