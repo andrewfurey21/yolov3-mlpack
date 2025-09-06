@@ -8,6 +8,8 @@
 using namespace mlpack;
 using namespace arma;
 
+// TODO: add some docs
+
 void loadImage(const std::string& file, data::ImageInfo& info, mat& data)
 {
   Load(file, data, info, true);
@@ -361,13 +363,17 @@ int main(void) {
   const std::string outputFile = "output.jpg";
 
   data::ImageInfo info;
-  mat image;
+  mat image, gray;
+  gray.set_size(416 * 416 * 3, 1);
+  gray.fill(0.2);
 
   data::ImageInfo newInfo(416, 416, 3);
   mat newImage;
 
   loadImage(inputFile, info, image);
-  resizeImage(info, image, newInfo, newImage);
+
+  embedImage(image, info, newImage, newInfo, 0, 0);
+  // resizeImage(info, image, newInfo, newImage);
   saveImage(outputFile, newInfo, newImage);
 
   // double ignoreThresh = 0.5f;
