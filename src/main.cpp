@@ -185,9 +185,7 @@ class YOLOv3Layer : public mlpack::Layer<MatType>
     imgSize(imgSize), numAttributes(numAttributes), anchorsSetup(false)
   {
     if (anchors.size() != 6)
-    {
       throw std::logic_error("YOLOv3-tiny must have 3 (w, h) anchors.");
-    }
 
     w = MatType(1, 3, arma::fill::none);
     h = MatType(1, 3, arma::fill::none);
@@ -197,7 +195,6 @@ class YOLOv3Layer : public mlpack::Layer<MatType>
       w.at(0, i) = anchors[i * 2];
       h.at(0, i) = anchors[i * 2 + 1];
     }
-
   }
 
   YOLOv3Layer* Clone() const override { return new YOLOv3Layer(*this); }
@@ -219,6 +216,8 @@ class YOLOv3Layer : public mlpack::Layer<MatType>
         "Input dimensions must be square.");
     gridSize = this->inputDimensions[0] * this->inputDimensions[1];
     this->outputDimensions = { gridSize * numAttributes * 3 };
+    // this->outputDimensions = { gridSize * 3, numAttributes }; // TODO: should be this
+    // this->outputDimensions = { numAttributes, gridSize * 3 }; // or this?
 
     if (!anchorsSetup)
     {
@@ -364,15 +363,21 @@ class YOLOv3tiny {
     model.Connect(convolution8, convolution19);
     // Set axis not necessary, since default is channels.
 
-    model.Connect(convolution19, convolution20);
-    model.Connect(convolution20, detections21); // TODO: correct?
+    model.Connect(convolution19, convolution20); // TODO: double check order
+    model.Connect(convolution20, detections21);
     // Again, set axis not necessary, since default is channels.
  
     // Concatenation order shouldn't matter.
     model.Connect(detections16, concatLayer22);
     model.Connect(detections21, concatLayer22);
+    model.SetAxis(concatLayer22, 0);
 
     model.Reset();
+  }
+
+  void Training(const bool training)
+  {
+    model.SetNetworkMode(training);
   }
 
   void Predict(const MatType& input, MatType& output)
@@ -450,10 +455,12 @@ int main(void) {
 
   LoadImage(inputFile, info, image);
 
-
   arma::mat detections;
   YOLOv3tiny model(416, 80);
+  model.Training(false);
   model.Predict(image, detections);
+
+  // detections shape should be (2535, 85)
 
   // LetterBox(info, image, newInfo, newImage);
   // SaveImage(outputFile, newInfo, newImage);
