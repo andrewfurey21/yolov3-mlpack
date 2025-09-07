@@ -265,6 +265,10 @@ class YOLOv3Layer : public mlpack::Layer<MatType>
     // h
     outputCube.tube(gridSize * 3, 0, gridSize * 4 - 1, 2) =
       hCube % arma::exp(inputCube.tube(gridSize * 3, 0, gridSize * 4 - 1, 2));
+
+    // Copy objects and classification logits.
+    outputCube.tube(gridSize * 4, 0, outputCube.n_rows - 1, 2) =
+      inputCube.tube(gridSize * 4, 0, inputCube.n_rows - 1, 2);
   }
 
   void Backward(const MatType& input, const MatType& output,
