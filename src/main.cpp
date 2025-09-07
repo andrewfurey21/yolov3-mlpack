@@ -174,7 +174,6 @@ double lineOverlap(double a, double aw, double b, double bw) {
                   std::min(a + aw / 2, b + bw / 2));
 }
 
-
 template <typename MatType = arma::mat>
 class YOLOv3Layer : public mlpack::Layer<MatType>
 {
@@ -241,14 +240,12 @@ class YOLOv3Layer : public mlpack::Layer<MatType>
     mlpack::MakeAlias(outputCube, output, gridSize * numAttributes, 3,
       batchSize);
 
+    // TODO: move repcubes to be in place s.t armadillo optimizes stuff better
     MatType offset = arma::regspace(0, this->inputDimensions[0] - 1);
     CubeType xOffset = arma::repcube(offset, this->inputDimensions[0], 3, batchSize);
     // Theres probably a better way.
     CubeType yOffset = arma::repcube(arma::vectorise(arma::repmat(offset.t(), this->inputDimensions[0], 1)),
       1, 3, batchSize);
-
-    CubeType wCube = arma::repcube(w, 1, 1, batchSize);
-    CubeType hCube = arma::repcube(h, 1, 1, batchSize);
 
     // x
     outputCube.tube(0, 0, gridSize - 1, 2) =
@@ -260,11 +257,11 @@ class YOLOv3Layer : public mlpack::Layer<MatType>
 
     // w
     outputCube.tube(gridSize * 2, 0, gridSize * 3 - 1, 2) =
-      wCube % arma::exp(inputCube.tube(gridSize * 2, 0, gridSize * 3 - 1, 2));
+      arma::repcube(w, 1, 1, batchSize) % arma::exp(inputCube.tube(gridSize * 2, 0, gridSize * 3 - 1, 2));
 
     // h
     outputCube.tube(gridSize * 3, 0, gridSize * 4 - 1, 2) =
-      hCube % arma::exp(inputCube.tube(gridSize * 3, 0, gridSize * 4 - 1, 2));
+      arma::repcube(h, 1, 1, batchSize) % arma::exp(inputCube.tube(gridSize * 3, 0, gridSize * 4 - 1, 2));
 
     // Copy objects and classification logits.
     outputCube.tube(gridSize * 4, 0, outputCube.n_rows - 1, 2) =
@@ -308,17 +305,17 @@ class YOLOv3tiny {
     model.InputDimensions() = { imgSize, imgSize, 3 };
 
     size_t convolution0 = Convolution(16, 3);
-    size_t maxPool1 = MaxPool2D(2);
+    size_t maxPool1 = MaxPool2x2(2);
     size_t convolution2 = Convolution(32, 3);
-    size_t maxPool3 = MaxPool2D(2);
+    size_t maxPool3 = MaxPool2x2(2);
     size_t convolution4 = Convolution(64, 3);
-    size_t maxPool5 = MaxPool2D(2);
+    size_t maxPool5 = MaxPool2x2(2);
     size_t convolution6 = Convolution(128, 3);
-    size_t maxPool7 = MaxPool2D(2);
+    size_t maxPool7 = MaxPool2x2(2);
     size_t convolution8 = Convolution(256, 3);
-    size_t maxPool9 = MaxPool2D(2);
+    size_t maxPool9 = MaxPool2x2(2);
     size_t convolution10 = Convolution(512, 3);
-    size_t maxPool11 = MaxPool2D(1);
+    size_t maxPool11 = MaxPool2x2(1);
     size_t convolution12 = Convolution(1024, 3);
     size_t convolution13 = Convolution(256, 1);
 
@@ -418,7 +415,7 @@ class YOLOv3tiny {
     return model.Add(block);
   }
 
-  size_t MaxPool2D(const size_t stride)
+  size_t MaxPool2x2(const size_t stride)
   {
     // All max pool layers have kernel size 2
     mlpack::MultiLayer<MatType> block;
@@ -464,7 +461,7 @@ int main(void) {
   model.Training(false);
   model.Predict(image, detections);
 
-  // detections shape should be (2535, 85)
+  // detections shape should be (85, 2535)
 
   // LetterBox(info, image, newInfo, newImage);
   // SaveImage(outputFile, newInfo, newImage);
