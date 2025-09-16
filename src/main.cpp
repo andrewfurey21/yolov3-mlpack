@@ -29,7 +29,7 @@ void CheckImage(const mlpack::data::ImageInfo& info,
 }
 
 /*
- *  Changes the `image` layout to be column major.
+ *  Changes the `image` layout from stb layout to mlpack layout.
  */
 arma::mat ImageLayout(const mlpack::data::ImageInfo& info,
                       const arma::mat& image)
@@ -50,8 +50,26 @@ arma::mat ImageLayout(const mlpack::data::ImageInfo& info,
 }
 
 /*
- *  Loads an image and normalizes it values. Image stored as column vector
- *  R0 G0 B0 R1 G1 B1 ...
+ *  Changes the `image` layout from mlpack layout to stb layout.
+ */
+arma::mat STBLayout(const mlpack::data::ImageInfo& info,
+                    const arma::mat& image)
+{
+  arma::mat input(image);
+  input.reshape(info.Width() * info.Height(), info.Channels());
+  for (size_t i = 0; i < input.n_cols; i++) {
+    arma::mat col(input.col(i));
+    col.reshape(info.Height(), info.Width());
+    col = col.t();
+    input.col(i) = arma::vectorise(col);
+  }
+
+  return arma::reshape(input.t(), info.Channels() * info.Height() *
+                       info.Width(), 1);
+}
+
+/*
+ *  Loads an image and normalizes it values. ImageLayout is the mlpack layout.
  */
 void LoadImage(const std::string& file,
                mlpack::data::ImageInfo& info,
