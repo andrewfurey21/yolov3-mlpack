@@ -37,46 +37,6 @@ void CheckImage(const mlpack::data::ImageInfo& info,
 }
 
 /*
- *  Changes the `image` layout from stb layout to mlpack layout.
- */
-arma::mat ImageLayout(const mlpack::data::ImageInfo& info,
-                      const arma::mat& image)
-{
-  arma::mat input =
-    arma::reshape(image, info.Channels(), info.Height() * info.Width()).t();
-  arma::mat output(info.Width() * info.Height(), info.Channels(),
-    arma::fill::none);
-
-  for (size_t i = 0; i < input.n_cols; i++)
-  {
-    arma::mat col(input.col(i));
-    col.reshape(info.Width(), info.Height());
-    col = col.t();
-    output.col(i) = arma::vectorise(col);
-  }
-  return arma::vectorise(output);
-}
-
-/*
- *  Changes the `image` layout from mlpack layout to stb layout.
- */
-arma::mat STBLayout(const mlpack::data::ImageInfo& info,
-                    const arma::mat& image)
-{
-  arma::mat input(image);
-  input.reshape(info.Width() * info.Height(), info.Channels());
-  for (size_t i = 0; i < input.n_cols; i++) {
-    arma::mat col(input.col(i));
-    col.reshape(info.Height(), info.Width());
-    col = col.t();
-    input.col(i) = arma::vectorise(col);
-  }
-
-  return arma::reshape(input.t(), info.Channels() * info.Height() *
-                       info.Width(), 1);
-}
-
-/*
  *  Loads an image, normalize it values and convert to mlpack layout.
  */
 void LoadImage(const std::string& file,
@@ -85,7 +45,7 @@ void LoadImage(const std::string& file,
 {
   Load(file, data, info, true);
   data /= 255.0f;
-  data = ImageLayout(info, data);
+  data = mlpack::data::ImageLayout(data, info);
 }
 
 /*
@@ -96,7 +56,7 @@ void SaveImage(const std::string& file,
                arma::mat& data)
 {
   CheckImage(info, data);
-  arma::mat stbData = STBLayout(info, data);
+  arma::mat stbData = mlpack::data::STBLayout(data, info);
   stbData *= 255;
   Save(file, stbData, info, true);
 }
@@ -519,7 +479,8 @@ int main(void) {
 
   mlpack::data::ImageInfo newInfo(200, 200, 3);
   arma::mat newImage;
-  newImage.resize(newInfo.Width() * newInfo.Height() * 3, 1); // TODO: add this into helper functions.
+  // TODO: add this into helper functions.
+  newImage.resize(newInfo.Width() * newInfo.Height() * 3, 1);
 
   LoadImage(inputFile, info, image);
   LetterBox(info, image, newInfo, newImage);
