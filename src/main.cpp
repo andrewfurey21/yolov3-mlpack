@@ -21,10 +21,18 @@
 void CheckImage(const mlpack::data::ImageInfo& info,
                 const arma::mat& data)
 {
-  if (data.n_rows != info.Width() * info.Height() * info.Channels() ||
-    data.n_cols != 1 || info.Channels() != 3)
+  size_t expectedRows = info.Width() * info.Height() * info.Channels();
+  if (data.n_rows != expectedRows || data.n_cols != 1 || info.Channels() != 3)
   {
-    throw std::logic_error("Image is the incorrect shape.");
+    std::ostringstream errMessage;
+    errMessage << "Image is the incorrect shape. \n"
+               << "data.n_rows: " << data.n_rows << "\n"
+               << "Width() * Height() * Channels() => "
+               << info.Width() << " * " << info.Height()
+               << " * " << info.Channels() << " = "
+               << expectedRows << "\n"
+               << "data.n_cols: " << data.n_cols << "\n";
+    throw std::logic_error(errMessage.str());
   }
 }
 
@@ -46,7 +54,7 @@ arma::mat ImageLayout(const mlpack::data::ImageInfo& info,
     col = col.t();
     output.col(i) = arma::vectorise(col);
   }
-  return output;
+  return arma::vectorise(output);
 }
 
 /*
@@ -69,7 +77,7 @@ arma::mat STBLayout(const mlpack::data::ImageInfo& info,
 }
 
 /*
- *  Loads an image and normalizes it values. ImageLayout is the mlpack layout.
+ *  Loads an image, normalize it values and convert to mlpack layout.
  */
 void LoadImage(const std::string& file,
                mlpack::data::ImageInfo& info,
@@ -81,7 +89,7 @@ void LoadImage(const std::string& file,
 }
 
 /*
- *  Saves an image back, converting the RGB values from the range 0-1 to 0-255.
+ *  Saves an image back, reset RGB range back to 0-255 and convert to stb layout
  */
 void SaveImage(const std::string& file,
                mlpack::data::ImageInfo& info,
@@ -96,26 +104,26 @@ void SaveImage(const std::string& file,
 /*
  *  Resizes an image using `resizedInfo`.
  */
-void ResizeImage(const mlpack::data::ImageInfo& oldInfo,
-                 const arma::mat& oldImage,
+void ResizeImage(const mlpack::data::ImageInfo& info,
+                 const arma::mat& image,
                  const mlpack::data::ImageInfo& resizedInfo,
                  arma::mat& resizedImage)
 {
   size_t newWidth = resizedInfo.Width();
   size_t newHeight = resizedInfo.Height();
 
-  size_t oldWidth = oldInfo.Width();
-  size_t oldHeight = oldInfo.Height();
+  size_t width = info.Width();
+  size_t height = info.Height();
 
-  CheckImage(oldInfo, oldImage);
+  CheckImage(info, image);
 
   resizedImage.clear();
   resizedImage = arma::mat(newWidth * newHeight * 3, 1);
 
-  double xRatio = (double)(oldWidth - 1) / (newWidth - 1);
-  double yRatio = (double)(oldHeight - 1) / (newHeight - 1);
+  double xRatio = (double)(width - 1) / (newWidth - 1);
+  double yRatio = (double)(height - 1) / (newHeight - 1);
 
-  for (size_t channel = 0; channel < 3; channel++)
+  for (size_t channel = 0; channel < info.Channels(); channel++)
   {
     for (size_t w = 0; w < newWidth; w++)
     {
@@ -130,10 +138,10 @@ void ResizeImage(const mlpack::data::ImageInfo& oldInfo,
         size_t xWeight = (xRatio * w) - xLow;
         size_t yWeight = (yRatio * h) - yLow;
 
-        double a = oldImage.at(yLow * oldWidth * 3 + xLow * 3 + channel);
-        double b = oldImage.at(yLow * oldWidth * 3 + xHigh * 3 + channel);
-        double c = oldImage.at(yHigh * oldWidth * 3 + xLow * 3 + channel);
-        double d = oldImage.at(yHigh * oldWidth * 3 + xHigh * 3 + channel);
+        double a = image.at(yLow + xLow * height + channel * width * height);
+        double b = image.at(yLow + xHigh * height + channel * width * height);
+        double c = image.at(yHigh + xLow * height + channel * width * height);
+        double d = image.at(yHigh + xHigh * height + channel * width * height);
 
         double value =
                 a * (1 - xWeight) * (1 - yWeight) +
@@ -141,7 +149,8 @@ void ResizeImage(const mlpack::data::ImageInfo& oldInfo,
                 c * yWeight * (1 - xWeight) +
                 d * xWeight * yWeight;
 
-        resizedImage.at(h * newWidth * 3 + w * 3 + channel) = value;
+        resizedImage.at(h + w * newHeight + channel * newWidth * newHeight) =
+          value;
       }
     }
   }
@@ -172,10 +181,10 @@ void EmbedImage(const mlpack::data::ImageInfo& srcInfo, const arma::mat& src,
         if (dy + j >= dstInfo.Height())
           break;
 
-        size_t sourceIndex = j * srcInfo.Channels() * srcInfo.Width() +
-          i * srcInfo.Channels() + c;
-        size_t destIndex = (j + dy) * dstInfo.Channels() * dstInfo.Width() +
-          (i + dx) * dstInfo.Channels() + c;
+        size_t sourceIndex = j + i * srcInfo.Height() +
+          c * srcInfo.Height() * srcInfo.Width();
+        size_t destIndex = (j + dy) + (i + dx) * dstInfo.Height() +
+          c * dstInfo.Height() * dstInfo.Width();
         dst.at(destIndex) = src.at(sourceIndex);
       }
     }
@@ -502,18 +511,19 @@ class YOLOv3tiny {
 };
 
 int main(void) {
-  const std::string inputFile = "./images/blue.jpg";
+  const std::string inputFile = "./images/dog.jpg";
   const std::string outputFile = "output.jpg";
 
   mlpack::data::ImageInfo info;
   arma::mat image;
 
-  mlpack::data::ImageInfo newInfo(10, 10, 3);
+  mlpack::data::ImageInfo newInfo(200, 200, 3);
   arma::mat newImage;
-  newImage.resize(newInfo.Width() * newInfo.Height() * 3, 1);
+  newImage.resize(newInfo.Width() * newInfo.Height() * 3, 1); // TODO: add this into helper functions.
 
   LoadImage(inputFile, info, image);
-  ResizeImage(info, image, newInfo, newImage);
+  LetterBox(info, image, newInfo, newImage);
+  SaveImage(outputFile, newInfo, newImage);
 
   // arma::mat detections;
   // YOLOv3tiny model(416, 80);
