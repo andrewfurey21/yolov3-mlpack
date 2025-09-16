@@ -17,6 +17,7 @@
  */
 
 #include <mlpack.hpp>
+#include <sstream>
 
 void CheckImage(const mlpack::data::ImageInfo& info,
                 const arma::mat& data)
@@ -207,16 +208,25 @@ class YOLOv3Layer : public mlpack::Layer<MatType>
  public:
   YOLOv3Layer(size_t imgSize,
               size_t numAttributes,
+              size_t predictionsPerBox,
               std::vector<typename MatType::elem_type> anchors) :
-    imgSize(imgSize), numAttributes(numAttributes), anchorsSetup(false)
+    imgSize(imgSize),
+    numAttributes(numAttributes),
+    predictionsPerBox(predictionsPerBox),
+    anchorsSetup(false)
   {
-    if (anchors.size() != 6)
-      throw std::logic_error("YOLOv3-tiny must have 3 (w, h) anchors.");
+    if (anchors.size() != 2 * predictionsPerBox)
+    {
+      std::ostringstream errMessage;
+      errMessage << "YOLOv3-tiny must have " << predictionsPerBox
+                  << " (w, h) anchors.";
+      throw std::logic_error(errMessage.str());
+    }
 
-    w = MatType(1, 3, arma::fill::none);
-    h = MatType(1, 3, arma::fill::none);
+    w = MatType(1, predictionsPerBox, arma::fill::none);
+    h = MatType(1, predictionsPerBox, arma::fill::none);
 
-    for (size_t i = 0; i < 3; i++)
+    for (size_t i = 0; i < predictionsPerBox; i++)
     {
       w.at(0, i) = anchors[i * 2];
       h.at(0, i) = anchors[i * 2 + 1];
@@ -227,7 +237,7 @@ class YOLOv3Layer : public mlpack::Layer<MatType>
 
   void ComputeOutputDimensions() override
   {
-    if (this->inputDimensions.size() != 3) 
+    if (this->inputDimensions.size() != 3)
     {
       std::ostringstream errMessage;
       errMessage << "YOLOv3Layer::ComputeOutputDimensions(): "
@@ -240,59 +250,62 @@ class YOLOv3Layer : public mlpack::Layer<MatType>
     if (this->inputDimensions[0] != this->inputDimensions[1])
       throw std::logic_error("YOLOv3Layer::ComputeOutputDimensions(): "
         "Input dimensions must be square.");
-    gridSize = this->inputDimensions[0] * this->inputDimensions[1];
-    this->outputDimensions = { gridSize * numAttributes * 3 };
-    // this->outputDimensions = { gridSize * 3, numAttributes }; // TODO: should be this
-    // this->outputDimensions = { numAttributes, gridSize * 3 }; // or this?
+    grid = this->inputDimensions[0] * this->inputDimensions[1];
+    this->outputDimensions = { numAttributes, grid * predictionsPerBox };
 
     if (!anchorsSetup)
     {
-      w = arma::repmat(w, gridSize, 1);
-      h = arma::repmat(h, gridSize, 1);
+      w = arma::repmat(w, grid, 1);
+      h = arma::repmat(h, grid, 1);
       anchorsSetup = true;
     }
   }
 
   void Forward(const MatType& input, MatType& output) override
   {
-    Type stride = imgSize / (Type)(gridSize);
+    Type stride = imgSize / (Type)(grid);
     size_t batchSize = input.n_cols;
     output.set_size(input.n_rows, batchSize);
 
     CubeType inputCube;
-    mlpack::MakeAlias(inputCube, input, gridSize * numAttributes, 3,
+    mlpack::MakeAlias(inputCube, input, grid * numAttributes, predictionsPerBox,
       batchSize);
 
     CubeType outputCube;
-    mlpack::MakeAlias(outputCube, output, gridSize * numAttributes, 3,
-      batchSize);
+    mlpack::MakeAlias(outputCube, output, grid * numAttributes,
+      predictionsPerBox, batchSize);
 
-    // TODO: move repcubes to be in place s.t armadillo optimizes stuff better
+    // TODO: Cache? it does use batchSize...
     MatType offset = arma::regspace(0, this->inputDimensions[0] - 1);
-    CubeType xOffset = arma::repcube(offset, this->inputDimensions[0], 3, batchSize);
-    // Theres probably a better way.
-    CubeType yOffset = arma::repcube(arma::vectorise(arma::repmat(offset.t(), this->inputDimensions[0], 1)),
-      1, 3, batchSize);
+    CubeType xOffset = arma::repcube(offset, this->inputDimensions[0],
+      predictionsPerBox, batchSize);
+    CubeType yOffset = arma::repcube(arma::vectorise(arma::repmat(offset.t(),
+      this->inputDimensions[0], 1)), 1, predictionsPerBox, batchSize);
 
+    const size_t cols = predictionsPerBox - 1;
     // x
-    outputCube.tube(0, 0, gridSize - 1, 2) =
-      (xOffset + 1 / (1 + arma::exp(inputCube.tube(0, 0, gridSize - 1, 2)))) * stride;
+    outputCube.tube(0, 0, grid - 1, cols) =
+      (xOffset + 1 / (1 + arma::exp(inputCube.tube(0, 0, grid - 1, cols))))
+      * stride;
 
     // y
-    outputCube.tube(gridSize, 0, gridSize * 2 - 1, 2) =
-      (yOffset + 1 / (1 + arma::exp(inputCube.tube(gridSize, 0, gridSize * 2 - 1, 2)))) * stride;
+    outputCube.tube(grid, 0, grid * 2 - 1, cols) =
+      (yOffset + 1 / (1 + arma::exp(inputCube.tube(grid, 0, grid * 2 - 1, cols))
+      )) * stride;
 
     // w
-    outputCube.tube(gridSize * 2, 0, gridSize * 3 - 1, 2) =
-      arma::repcube(w, 1, 1, batchSize) % arma::exp(inputCube.tube(gridSize * 2, 0, gridSize * 3 - 1, 2));
+    outputCube.tube(grid * 2, 0, grid * 3 - 1, cols) =
+      arma::repcube(w, 1, 1, batchSize) %
+      arma::exp(inputCube.tube(grid * 2, 0, grid * 3 - 1, cols));
 
     // h
-    outputCube.tube(gridSize * 3, 0, gridSize * 4 - 1, 2) =
-      arma::repcube(h, 1, 1, batchSize) % arma::exp(inputCube.tube(gridSize * 3, 0, gridSize * 4 - 1, 2));
+    outputCube.tube(grid * 3, 0, grid * 4 - 1, cols) =
+      arma::repcube(h, 1, 1, batchSize) %
+      arma::exp(inputCube.tube(grid * 3, 0, grid * 4 - 1, cols));
 
     // Copy objects and classification logits.
-    outputCube.tube(gridSize * 4, 0, outputCube.n_rows - 1, 2) =
-      inputCube.tube(gridSize * 4, 0, inputCube.n_rows - 1, 2);
+    outputCube.tube(grid * 4, 0, outputCube.n_rows - 1, cols) =
+      inputCube.tube(grid * 4, 0, inputCube.n_rows - 1, cols);
   }
 
   void Backward(const MatType& input, const MatType& output,
@@ -309,12 +322,13 @@ class YOLOv3Layer : public mlpack::Layer<MatType>
 
   size_t imgSize;
   size_t numAttributes;
-  size_t gridSize;
+  size_t grid; // number of boxes in a grid (13 * 13 or 26 * 26)
   MatType w;
   MatType h;
 
-  bool anchorsSetup;
+  size_t predictionsPerBox;
 
+  bool anchorsSetup;
 };
 
 template <typename MatType = arma::mat>
@@ -435,8 +449,8 @@ class YOLOv3tiny {
 
     if (batchNorm)
     {
-      // set epsilon to zero, couldn't find it used in darknet/ggml.
-      block.template Add<mlpack::BatchNorm<MatType>>(2, 2, 0, false, 0.1f);
+      // set epsilon to zero, couldn't find it used in darknet/ggml versions.
+      block.template Add<mlpack::BatchNorm<MatType>>(2, 2, 0, false);
     }
     block.template Add<mlpack::LeakyReLU<MatType>>(reluSlope);
     return model.Add(block);
