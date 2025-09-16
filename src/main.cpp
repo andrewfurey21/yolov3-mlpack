@@ -77,6 +77,7 @@ void LoadImage(const std::string& file,
 {
   Load(file, data, info, true);
   data /= 255.0f;
+  data = ImageLayout(info, data);
 }
 
 /*
@@ -84,11 +85,12 @@ void LoadImage(const std::string& file,
  */
 void SaveImage(const std::string& file,
                mlpack::data::ImageInfo& info,
-               arma::mat data)
+               arma::mat& data)
 {
   CheckImage(info, data);
-  data *= 255;
-  Save(file, data, info, true);
+  arma::mat stbData = STBLayout(info, data);
+  stbData *= 255;
+  Save(file, stbData, info, true);
 }
 
 /*
