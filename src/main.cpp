@@ -29,7 +29,29 @@ void CheckImage(const mlpack::data::ImageInfo& info,
 }
 
 /*
- *  Loads an image and normalizes it values.
+ *  Changes the `image` layout to be column major.
+ */
+arma::mat ImageLayout(const mlpack::data::ImageInfo& info,
+                      const arma::mat& image)
+{
+  arma::mat input =
+    arma::reshape(image, info.Channels(), info.Height() * info.Width()).t();
+  arma::mat output(info.Width() * info.Height(), info.Channels(),
+    arma::fill::none);
+
+  for (size_t i = 0; i < input.n_cols; i++)
+  {
+    arma::mat col(input.col(i));
+    col.reshape(info.Width(), info.Height());
+    col = col.t();
+    output.col(i) = arma::vectorise(col);
+  }
+  return output;
+}
+
+/*
+ *  Loads an image and normalizes it values. Image stored as column vector
+ *  R0 G0 B0 R1 G1 B1 ...
  */
 void LoadImage(const std::string& file,
                mlpack::data::ImageInfo& info,
@@ -460,22 +482,23 @@ class YOLOv3tiny {
 };
 
 int main(void) {
-  const std::string inputFile = "./images/dog.jpg";
+  const std::string inputFile = "./images/blue.jpg";
   const std::string outputFile = "output.jpg";
 
   mlpack::data::ImageInfo info;
   arma::mat image;
 
-  mlpack::data::ImageInfo newInfo(416, 416, 3);
+  mlpack::data::ImageInfo newInfo(10, 10, 3);
   arma::mat newImage;
   newImage.resize(newInfo.Width() * newInfo.Height() * 3, 1);
 
   LoadImage(inputFile, info, image);
+  ResizeImage(info, image, newInfo, newImage);
 
-  arma::mat detections;
-  YOLOv3tiny model(416, 80);
-  model.Training(false);
-  model.Predict(image, detections);
+  // arma::mat detections;
+  // YOLOv3tiny model(416, 80);
+  // model.Training(false);
+  // model.Predict(image, detections);
 
   // detections shape should be (85, 2535)
 
