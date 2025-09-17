@@ -17,7 +17,6 @@
  */
 
 #include <mlpack.hpp>
-#include <sstream>
 
 void CheckImage(const mlpack::data::ImageInfo& info,
                 const arma::mat& data)
@@ -229,10 +228,11 @@ class YOLOv3Layer : public mlpack::Layer<MatType>
     w = MatType(grid, predictionsPerCell, arma::fill::none);
     h = MatType(grid, predictionsPerCell, arma::fill::none);
 
+    // TODO: Could maybe use .each_row()?
     for (size_t i = 0; i < predictionsPerCell; i++)
     {
-      w.col(i) = anchors[i * 2];
-      h.col(i) = anchors[i * 2 + 1];
+      w.col(i).fill(anchors[i * 2]);
+      h.col(i).fill(anchors[i * 2 + 1]);
     }
   }
 
@@ -270,9 +270,12 @@ class YOLOv3Layer : public mlpack::Layer<MatType>
     mlpack::MakeAlias(inputCube, input, grid * numAttributes, predictionsPerCell,
       batchSize);
 
-    CubeType outputCube;
-    mlpack::MakeAlias(outputCube, output, grid * numAttributes,
-      predictionsPerCell, batchSize);
+    CubeType outputCube(grid * numAttributes, predictionsPerCell, batchSize,
+      arma::fill::none);
+
+    CubeType reshapedCube;
+    mlpack::MakeAlias(reshapedCube, output, numAttributes,
+      predictionsPerCell * grid, batchSize);
 
     MatType offset = arma::regspace(0, this->inputDimensions[0] - 1);
     CubeType xOffset = arma::repcube(offset, this->inputDimensions[0],
@@ -306,6 +309,15 @@ class YOLOv3Layer : public mlpack::Layer<MatType>
       1 / (1 + arma::exp(-inputCube.tube(grid * 4, 0, inputCube.n_rows - 1, cols)));
 
     // TODO: make sure memory is layed out s.t the output dimensions are correct.
+    for (size_t i = 0; i < outputCube.n_slices; i++)
+    {
+      reshapedCube.slice(i) = arma::reshape(
+        arma::reshape(
+          outputCube.slice(i), grid, numAttributes * predictionsPerCell
+        ).t(),
+        numAttributes, predictionsPerCell * grid
+      );
+    }
   }
 
   void Backward(const MatType& input, const MatType& output,
@@ -335,7 +347,7 @@ class YOLOv3tiny {
   YOLOv3tiny(size_t imgSize, size_t classes) :
     imgSize(imgSize),
     classes(classes),
-    predictionsPerCell(predictionsPerCell)
+    predictionsPerCell(3)
   {
     // x, y, w, h, objectness score, n classes (COCO = 80)
     numAttributes = 5 + classes;
@@ -363,7 +375,7 @@ class YOLOv3tiny {
     // Detection head for larger objects.
     size_t convolution14 = Convolution(512, 3);
     size_t convolution15 = Convolution(predictionsPerCell * numAttributes, 1, false);
-    size_t detections16 = YOLO(imgSize, { 81, 82, 135, 169, 344, 319 });
+    size_t detections16 = YOLO(imgSize, 13, { 81, 82, 135, 169, 344, 319 });
 
     size_t convolution17 = Convolution(128, 1);
     // Upsample for more fine-grained detections.
@@ -372,7 +384,7 @@ class YOLOv3tiny {
     // Detection head for smaller objects.
     size_t convolution19 = Convolution(256, 3);
     size_t convolution20 = Convolution(predictionsPerCell * numAttributes, 1, false);
-    size_t detections21 = YOLO(imgSize, { 10, 14, 23, 27, 37, 58 });
+    size_t detections21 = YOLO(imgSize, 26, { 10, 14, 23, 27, 37, 58 });
 
     // the DAGNetwork class requires a layer for concatenations, so we use
     // the Identity layer for pure concatentation, and no other compute.
@@ -412,7 +424,6 @@ class YOLOv3tiny {
     // Concatenation order shouldn't matter.
     model.Connect(detections16, concatLayer22);
     model.Connect(detections21, concatLayer22);
-    model.SetAxis(concatLayer22, 0);
 
     model.Reset();
   }
@@ -425,6 +436,16 @@ class YOLOv3tiny {
   void Predict(const MatType& input, MatType& output)
   {
     model.Predict(input, output);
+  }
+
+  std::string OutputDimensions()
+  {
+    std::vector<size_t> outputDims = model.OutputDimensions();
+    std::ostringstream strDims;
+    for (size_t i = 0; i < outputDims.size() - 1; i++)
+      strDims << outputDims[i] << ", ";
+    strDims << outputDims.back() << "\n";
+    return strDims.str();
   }
 
  private:
@@ -471,8 +492,11 @@ class YOLOv3tiny {
     return model.Add(block);
   }
 
-  size_t YOLO(const size_t imgSize, const std::vector<double>& anchors) {
-    return model.Add<YOLOv3Layer<MatType>>(imgSize, numAttributes, predictionsPerCell, anchors);
+  size_t YOLO(const size_t imgSize, size_t gridSize,
+              const std::vector<double>& anchors)
+  {
+    return model.Add<YOLOv3Layer<MatType>>(imgSize, numAttributes, gridSize,
+      predictionsPerCell, anchors);
   }
 
 
@@ -492,17 +516,19 @@ int main(void) {
   mlpack::data::ImageInfo info;
   arma::mat image;
 
-  mlpack::data::ImageInfo newInfo(200, 200, 3);
+  mlpack::data::ImageInfo newInfo(416, 416, 3);
   arma::mat newImage;
 
   LoadImage(inputFile, info, image);
   LetterBox(info, image, newInfo, newImage);
   SaveImage(outputFile, newInfo, newImage);
 
-  // arma::mat detections;
-  // YOLOv3tiny model(416, 80);
-  // model.Training(false);
-  // model.Predict(image, detections);
+  arma::mat detections;
+  YOLOv3tiny model(416, 80);
+  model.Training(false);
+  model.Predict(image, detections);
+
+  std::cout << "Model output: " << model.OutputDimensions() << "\n";
 
   // detections shape should be (85, 2535)
 
