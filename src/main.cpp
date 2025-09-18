@@ -313,12 +313,13 @@ class YOLOv3Layer : public mlpack::Layer<MatType>
 
     for (size_t i = 0; i < outputCube.n_slices; i++)
     {
-      reshapedCube.slice(i) = arma::reshape(
+      reshapedCube.slice(i) =
         arma::reshape(
-          outputCube.slice(i), grid, numAttributes * predictionsPerCell
-        ).t(),
-        numAttributes, predictionsPerCell * grid
-      );
+          arma::reshape(
+            outputCube.slice(i), grid, numAttributes * predictionsPerCell
+          ).t(),
+          numAttributes, predictionsPerCell * grid
+        );
     }
   }
 
@@ -347,12 +348,12 @@ class YOLOv3Layer : public mlpack::Layer<MatType>
 template <typename MatType = arma::mat>
 class YOLOv3tiny {
  public:
-  YOLOv3tiny(size_t imgSize, size_t classes) :
+  YOLOv3tiny(size_t imgSize, size_t classes, size_t predictionsPerCell) :
     imgSize(imgSize),
     classes(classes),
-    predictionsPerCell(3)
+    predictionsPerCell(predictionsPerCell)
   {
-    // x, y, w, h, objectness score, n classes (COCO = 80)
+    // x, y, w, h, objectness score, n classes (e.g. COCO = 80)
     numAttributes = 5 + classes;
     scale = { 2.0, 2.0 };
 
@@ -438,6 +439,7 @@ class YOLOv3tiny {
 
   void Predict(const MatType& input, MatType& output)
   {
+    CheckImage(mlpack::data::ImageInfo(imgSize, imgSize, 3), input);
     model.Predict(input, output);
   }
 
@@ -447,7 +449,7 @@ class YOLOv3tiny {
     std::ostringstream strDims;
     for (size_t i = 0; i < outputDims.size() - 1; i++)
       strDims << outputDims[i] << ", ";
-    strDims << outputDims.back() << "\n";
+    strDims << outputDims.back();
     return strDims.str();
   }
 
@@ -527,17 +529,12 @@ int main(void) {
   SaveImage(outputFile, newInfo, newImage);
 
   arma::mat detections;
-  arma::mat testInput = arma::linspace(0, 20, 85 * 3 * 13 * 13);
-  // YOLOv3tiny model(416, 80);
-  // model.Training(false);
-  // model.Predict(image, detections);
-
-  // std::cout << "Model output: " << model.OutputDimensions() << "\n";
+  YOLOv3tiny model(416, 80, 3);
+  model.Training(false);
+  model.Predict(newImage, detections);
 
   // detections shape should be (85, 2535)
-
-  // LetterBox(info, image, newInfo, newImage);
-  // SaveImage(outputFile, newInfo, newImage);
+  std::cout << "Model output shape: " << model.OutputDimensions() << "\n";
 
   return 0;
 }
