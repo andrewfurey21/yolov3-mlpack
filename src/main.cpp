@@ -1,4 +1,5 @@
 /*
+ * YOLOv3-tiny, based on the paper below, written with mlpack.
  *
  * @article{DBLP:journals/corr/abs-1804-02767,
  *   author       = {Joseph Redmon and Ali Farhadi},
@@ -17,8 +18,8 @@
  */
 
 #include <mlpack.hpp>
-#include <unordered_map>
 
+// TODO: use this instead.
 struct Image
 {
   mlpack::data::ImageInfo info;
@@ -56,6 +57,13 @@ void LoadImage(const std::string& file,
   Load(file, data, info, true);
   data /= 255.0f;
   data = mlpack::data::ImageLayout(data, info);
+
+  // Hack so that other image processing functions work.
+  if (grayscale)
+  {
+    data = arma::repmat(data, 3, 1);
+    info.Channels() = 3;
+  }
 }
 
 /*
@@ -74,7 +82,7 @@ void SaveImage(const std::string& file,
 /*
  *  Get object labels from path.
  */
-std::vector<std::string> GetLabels(const std::string& path)
+std::vector<std::string> GetLabels(const std::string& path, size_t numClasses)
 {
   std::ifstream file(path);
   std::vector<std::string> labels;
@@ -88,28 +96,37 @@ std::vector<std::string> GetLabels(const std::string& path)
   std::string line;
   while (std::getline(file, line))
     labels.push_back(line);
+
+  if (labels.size() != numClasses)
+  {
+    std::ostringstream errMessage;
+    errMessage << "Expected " << numClasses
+               << " classes, but got " << labels.size() << ".";
+    throw std::logic_error(errMessage.str());
+  }
   return labels;
+}
+
+std::string AlphabetKey(char letter, size_t size)
+{
+  return std::to_string((int)letter) + "_" + std::to_string(size);
 }
 
 // There should be 8 sizes per letter.
 // each png should start with letter in ascii decimal
 // example d size 7: dir/100_7.png
-void GetAlphabet(const std::string& dir,
-                 std::unordered_map<std::string, Image>& alphabet)
+std::unordered_map<char, Image> GetAlphabet(const std::string& dir)
 {
-  alphabet.clear();
-  for (size_t size = 0; size < 8; size++)
+  std::unordered_map<char, Image> alphabet;
+  // Loops through all printable ascii
+  for (char letter = ' '; letter <= '~'; letter++)
   {
-    std::string end = "_" + std::to_string(size);
-    for (char letter = ' '; letter <= '~'; letter++)
-    {
-      std::string key = std::to_string((int)letter) + end;
-      std::string filename = dir + "/" + key + ".png";
-      Image image;
-      LoadImage(filename, image.info, image.data, true);
-      alphabet.insert({ key, image });
-    }
+    std::string filename = dir + "/" + AlphabetKey(letter, 1) + ".png";
+    Image image;
+    LoadImage(filename, image.info, image.data, true);
+    alphabet.insert({ letter, image });
   }
+  return alphabet;
 }
 
 /*
@@ -149,10 +166,10 @@ void ResizeImage(const mlpack::data::ImageInfo& info,
         size_t xWeight = (xRatio * w) - xLow;
         size_t yWeight = (yRatio * h) - yLow;
 
-        double a = image.at(yLow + xLow * height + channel * width * height);
-        double b = image.at(yLow + xHigh * height + channel * width * height);
-        double c = image.at(yHigh + xLow * height + channel * width * height);
-        double d = image.at(yHigh + xHigh * height + channel * width * height);
+        double a = image.at(xLow + yLow * width + channel * width * height);
+        double b = image.at(xLow + yHigh * width + channel * width * height);
+        double c = image.at(xHigh + yLow * width + channel * width * height);
+        double d = image.at(xHigh + yHigh * width + channel * width * height);
 
         double value =
                 a * (1 - xWeight) * (1 - yWeight) +
@@ -160,7 +177,7 @@ void ResizeImage(const mlpack::data::ImageInfo& info,
                 c * yWeight * (1 - xWeight) +
                 d * xWeight * yWeight;
 
-        resizedImage.at(h + w * newHeight + channel * newWidth * newHeight) =
+        resizedImage.at(w + h * newWidth + channel * newWidth * newHeight) =
           value;
       }
     }
@@ -175,8 +192,7 @@ void EmbedImage(const mlpack::data::ImageInfo& srcInfo, const arma::mat& src,
                 const size_t dx, const size_t dy) {
 
   CheckImage(srcInfo, src);
-  dst.clear();
-  dst = arma::mat(dstInfo.Width() * dstInfo.Height() * dstInfo.Channels(), 1);
+  CheckImage(dstInfo, dst);
 
   size_t width = std::min(srcInfo.Width() + dx, dstInfo.Width());
   size_t height = std::min(srcInfo.Height() + dy, dstInfo.Height());
@@ -193,9 +209,10 @@ void EmbedImage(const mlpack::data::ImageInfo& srcInfo, const arma::mat& src,
         if (dy + j >= dstInfo.Height())
           break;
 
-        size_t sourceIndex = j + i * srcInfo.Height() +
+        size_t sourceIndex = i + j * srcInfo.Width() +
           c * srcInfo.Height() * srcInfo.Width();
-        size_t destIndex = (j + dy) + (i + dx) * dstInfo.Height() +
+
+        size_t destIndex = (i + dx) + (j + dy) * dstInfo.Width() +
           c * dstInfo.Height() * dstInfo.Width();
         dst.at(destIndex) = src.at(sourceIndex);
       }
@@ -263,10 +280,11 @@ class BoundingBox
     blue = 0.15;
 
     objectIndex = classProbs.index_max();
+    objectProb = classProbs.at(objectIndex);
   }
 
   void Draw(arma::mat& image, const mlpack::data::ImageInfo& info,
-            const size_t borderSize)
+            const size_t borderSize, const std::vector<std::string>& labels, const std::unordered_map<char, Image> &alphabet, const double letterSize)
   {
     double x1 = std::clamp<double>(this->x1, 0, info.Width() - 1);
     double x2 = std::clamp<double>(this->x2, 0, info.Width() - 1);
@@ -323,6 +341,29 @@ class BoundingBox
         image(bR, 0) = blue;
       }
     }
+    std::cout << labels[objectIndex] << ": " << objectProb * 100 << "%\n";
+    DrawLabel(image, info, labels[objectIndex], letterSize, alphabet);
+  }
+
+  void DrawLabel(arma::mat& image,
+                 const mlpack::data::ImageInfo& info,
+                 const std::string& label,
+                 const double size,
+                 const std::unordered_map<char, Image>& alphabet)
+  {
+    double dx = x1;
+    for (size_t i = 0; i < label.size(); i++)
+    {
+      char letter = label[i];
+      Image letterImage = alphabet.at(letter);
+      Image resized;
+      resized.info = mlpack::data::ImageInfo(letterImage.info.Width() * size, letterImage.info.Height() * size, 3);
+      ResizeImage(letterImage.info, letterImage.data, resized.info, resized.data);
+      EmbedImage(resized.info, resized.data, info, image, dx, y1);
+      dx += resized.info.Width();
+      if (dx > info.Width())
+        break;
+    }
   }
 
  private:
@@ -334,6 +375,7 @@ class BoundingBox
   double green;
   double blue;
   size_t objectIndex;
+  double objectProb;
 };
 
 /*
@@ -344,6 +386,9 @@ void DrawBoxes(const arma::mat& modelOutput,
                const double maxProb,
                const double borderSize,
                const size_t imgSize,
+               const double letterSize,
+               const std::vector<std::string>& labels,
+               const std::unordered_map<char, Image>& alphabet,
                const mlpack::data::ImageInfo& info,
                arma::mat& image)
 {
@@ -386,7 +431,7 @@ void DrawBoxes(const arma::mat& modelOutput,
       prediction.submat(5, 0, prediction.n_rows - 1, 0);
 
     BoundingBox bbox(x, y, w, h, classProbs);
-    bbox.Draw(image, info, borderSize);
+    bbox.Draw(image, info, borderSize, labels, alphabet, letterSize);
   }
 }
 
@@ -709,26 +754,25 @@ class YOLOv3tiny {
 };
 
 int main(int argc, const char** argv) {
-  // if (argc != 4)
-  //   throw std::logic_error("usage: ./main <labels> <input_image> <output_image>");
-  //
-  // const std::string inputFile = argv[2];
-  // const std::string outputFile = argv[3];
-  //
-  // mlpack::data::ImageInfo info;
-  // arma::mat image;
-  //
-  // mlpack::data::ImageInfo newInfo(416, 416, 3);
-  // arma::mat newImage;
+  // Settings
+  const size_t numClasses = 80;
 
-  std::unordered_map<std::string, Image> alphabet;
-  GetAlphabet("../data/labels/", alphabet);
-  SaveImage("../output.jpg", alphabet["100_7"].info, alphabet["100_7"].data);
+  if (argc != 4)
+    throw std::logic_error("usage: ./main <labels> <input_image> <output_image>");
 
-  // std::vector<std::string> labels = GetLabels(argv[1]); // TODO: assert 80 for coco
-  // std::cout << labels.size() << "\n";
+  const std::string inputFile = argv[2];
+  const std::string outputFile = argv[3];
 
-  // LoadImage(inputFile, info, image);
+  mlpack::data::ImageInfo info;
+  arma::mat image;
+
+  mlpack::data::ImageInfo newInfo(416, 416, 3);
+  arma::mat newImage;
+
+  std::unordered_map<char, Image> alphabet = GetAlphabet("../data/labels/");
+  const std::vector<std::string> labels = GetLabels(argv[1], numClasses);
+
+  LoadImage(inputFile, info, image);
   // LetterBox(info, image, newInfo, newImage);
 
   // arma::mat detections;
@@ -736,13 +780,13 @@ int main(int argc, const char** argv) {
   // model.Training(false);
   // model.Predict(newImage, detections);
 
-  // arma::mat detections = arma::mat({
-  //   50, 50, 20, 20, 1.0, 0.3, 0.4, 0.3,
-  //   110, 150, 20, 20, 1.0, 0.5, 0.1, 0.4,
-  // }).t();
-  //
-  // DrawBoxes(detections, 2, 0.5, 2, 416, info, image);
-  // SaveImage(outputFile, info, image);
+  arma::mat detections = arma::mat({
+    50, 50, 20, 20, 1.0, 0.3, 0.4, 0.3,
+    110, 150, 20, 20, 1.0, 0.5, 0.1, 0.4,
+  }).t();
+
+  DrawBoxes(detections, 2, 0.5, 2, 416, 0.7, labels, alphabet, info, image);
+  SaveImage(outputFile, info, image);
 
   // detections shape should be (85, 2535)
   // std::cout << "Model output shape: " << model.OutputDimensions() << "\n";
