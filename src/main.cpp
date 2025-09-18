@@ -62,6 +62,26 @@ void SaveImage(const std::string& file,
 }
 
 /*
+ *  Get object labels from path.
+ */
+std::vector<std::string> GetLabels(const std::string& path)
+{
+  std::ifstream file(path);
+  std::vector<std::string> labels;
+  if (!file)
+  {
+    std::ostringstream errMessage;
+    errMessage << "Could not open " << path << ".";
+    throw std::logic_error(errMessage.str());
+  }
+
+  std::string line;
+  while (std::getline(file, line))
+    labels.push_back(line);
+  return labels;
+}
+
+/*
  *  Resizes an image using `resizedInfo`.
  */
 void ResizeImage(const mlpack::data::ImageInfo& info,
