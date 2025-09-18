@@ -213,15 +213,17 @@ class YOLOv3Layer : public mlpack::Layer<MatType>
               size_t predictionsPerCell,
               std::vector<typename MatType::elem_type> anchors) :
     imgSize(imgSize),
-    grid(gridSize * gridSize),
     numAttributes(numAttributes),
+    gridSize(gridSize),
+    grid(gridSize * gridSize),
     predictionsPerCell(predictionsPerCell)
   {
     if (anchors.size() != 2 * predictionsPerCell)
     {
       std::ostringstream errMessage;
       errMessage << "YOLOv3-tiny must have " << predictionsPerCell
-                  << " (w, h) anchors.";
+                  << " (w, h) anchors but you gave "
+                  << anchors.size() / 2 << ".";
       throw std::logic_error(errMessage.str());
     }
 
@@ -260,9 +262,10 @@ class YOLOv3Layer : public mlpack::Layer<MatType>
     this->outputDimensions = { numAttributes, grid * predictionsPerCell };
   }
 
+  // Output format: cx, cy, w, h
   void Forward(const MatType& input, MatType& output) override
   {
-    Type stride = imgSize / (Type)(grid);
+    Type stride = imgSize / (Type)(gridSize);
     size_t batchSize = input.n_cols;
     output.set_size(input.n_rows, batchSize);
 
@@ -308,7 +311,6 @@ class YOLOv3Layer : public mlpack::Layer<MatType>
     outputCube.tube(grid * 4, 0, outputCube.n_rows - 1, cols) =
       1 / (1 + arma::exp(-inputCube.tube(grid * 4, 0, inputCube.n_rows - 1, cols)));
 
-    // TODO: make sure memory is layed out s.t the output dimensions are correct.
     for (size_t i = 0; i < outputCube.n_slices; i++)
     {
       reshapedCube.slice(i) = arma::reshape(
@@ -334,6 +336,7 @@ class YOLOv3Layer : public mlpack::Layer<MatType>
 
   size_t imgSize;
   size_t numAttributes;
+  size_t gridSize;
   size_t grid; // number of boxes in a grid (13 * 13 or 26 * 26)
   MatType w;
   MatType h;
@@ -459,7 +462,7 @@ class YOLOv3tiny {
     {
       std::ostringstream errMessage;
       errMessage << "Kernel size for convolutions in yolov3-tiny must be 3"
-        "or 1, but you supplied " << kernel << ".\n";
+        "or 1, but you gave " << kernel << ".\n";
       throw std::logic_error(errMessage.str());
     }
 
@@ -524,11 +527,12 @@ int main(void) {
   SaveImage(outputFile, newInfo, newImage);
 
   arma::mat detections;
-  YOLOv3tiny model(416, 80);
-  model.Training(false);
-  model.Predict(image, detections);
+  arma::mat testInput = arma::linspace(0, 20, 85 * 3 * 13 * 13);
+  // YOLOv3tiny model(416, 80);
+  // model.Training(false);
+  // model.Predict(image, detections);
 
-  std::cout << "Model output: " << model.OutputDimensions() << "\n";
+  // std::cout << "Model output: " << model.OutputDimensions() << "\n";
 
   // detections shape should be (85, 2535)
 
