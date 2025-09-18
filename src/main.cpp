@@ -194,6 +194,151 @@ void LetterBox(const mlpack::data::ImageInfo& srcInfo, const arma::mat& src,
     (dstInfo.Height() - height)/2);
 }
 
+class BoundingBox
+{
+ public:
+  // Expects format: cx, cy, w, h
+  BoundingBox(const double cx, const double cy, const double w, const double h,
+              const arma::mat& classProbs)
+  {
+    x1 = cx - w / 2.0;
+    x2 = cx + w / 2.0;
+    y1 = cy - h / 2.0;
+    y2 = cy + h / 2.0;
+
+    // TODO: get colors
+    red = 0.98;
+    green = 0.90;
+    blue = 0.15;
+
+    objectIndex = classProbs.index_max();
+  }
+
+  void Draw(arma::mat& image, const mlpack::data::ImageInfo& info,
+            const size_t borderSize)
+  {
+    double x1 = std::clamp<double>(this->x1, 0, info.Width() - 1);
+    double x2 = std::clamp<double>(this->x2, 0, info.Width() - 1);
+    double y1 = std::clamp<double>(this->y1, 0, info.Height() - 1);
+    double y2 = std::clamp<double>(this->y2, 0, info.Height() - 1);
+
+    if (x1 > x2 || y1 > y2)
+      throw std::logic_error("Bounding box has a bad shape.");
+
+    // Assumes image is layed out planar, i.e r, r, ... g, g, ... b, b
+    for (int b = 0; b < borderSize; b++)
+    {
+      for (int x = x1; x <= x2; x++)
+      {
+        // Top
+        int yTop = y1 - b;
+        // Bottom
+        int yBot = y2 + b;
+
+        int rTop = x + yTop * info.Width();
+        int gTop = x + yTop * info.Width() + info.Height() * info.Width();
+        int bTop = x + yTop * info.Width() + info.Height() * info.Width() * 2;
+        image(rTop, 0) = red;
+        image(gTop, 0) = green;
+        image(bTop, 0) = blue;
+
+        int rBot = x + yBot * info.Width();
+        int gBot = x + yBot * info.Width() + info.Height() * info.Width();
+        int bBot = x + yBot * info.Width() + info.Height() * info.Width() * 2;
+        image(rBot, 0) = red;
+        image(gBot, 0) = green;
+        image(bBot, 0) = blue;
+      }
+
+      for (int y = y1; y <= y2; y++)
+      {
+        // Left
+        int xL = x1 + b;
+        // Right
+        int xR = x2 - b;
+
+        int rL = xL + y * info.Width();
+        int gL = xL + y * info.Width() + info.Height() * info.Width();
+        int bL = xL + y * info.Width() + info.Height() * info.Width() * 2;
+        image(rL, 0) = red;
+        image(gL, 0) = green;
+        image(bL, 0) = blue;
+
+        int rR = xR + y * info.Width();
+        int gR = xR + y * info.Width() + info.Height() * info.Width();
+        int bR = xR + y * info.Width() + info.Height() * info.Width() * 2;
+        image(rR, 0) = red;
+        image(gR, 0) = green;
+        image(bR, 0) = blue;
+      }
+    }
+  }
+
+ private:
+  double x1;
+  double y1;
+  double x2;
+  double y2;
+  double red;
+  double green;
+  double blue;
+  size_t objectIndex;
+};
+
+/*
+ * Draw boxes onto image, only if the boxes objectness score is > `maxProb`.
+ */
+void DrawBoxes(const arma::mat& modelOutput,
+               const size_t numBoxes,
+               const double maxProb,
+               const double borderSize,
+               const size_t imgSize,
+               const mlpack::data::ImageInfo& info,
+               arma::mat& image)
+{
+  CheckImage(info, image);
+  if (modelOutput.n_cols != 1)
+  {
+    std::ostringstream errMessage;
+    errMessage << "modelOutput should have 1 column, but you gave "
+               << modelOutput.n_cols << " columns.";
+    throw std::logic_error(errMessage.str());
+  }
+
+  const size_t rem = modelOutput.n_rows % numBoxes;
+  if (rem != 0)
+  {
+    std::ostringstream errMessage;
+    errMessage << "modelOutput rows should be divisible by numBoxes, but "
+               << modelOutput.n_rows << " % " << numBoxes << " == " << rem;
+    throw std::logic_error(errMessage.str());
+  }
+
+  double xRatio = (double)info.Width() / imgSize;
+  double yRatio = (double)info.Height() / imgSize;
+
+  const size_t predictionSize = modelOutput.n_rows / numBoxes;
+  for (size_t box = 0; box < numBoxes; box++)
+  {
+    arma::mat prediction;
+    mlpack::MakeAlias(prediction, modelOutput, predictionSize, 1,
+      box * predictionSize);
+    if (prediction.at(4, 0) < maxProb)
+      continue;
+
+    double x, y, w, h;
+    x = prediction.at(0) * xRatio;
+    y = prediction.at(1) * yRatio;
+    w = prediction.at(2) * xRatio;
+    h = prediction.at(3) * yRatio;
+    const arma::mat& classProbs =
+      prediction.submat(5, 0, prediction.n_rows - 1, 0);
+
+    BoundingBox bbox(x, y, w, h, classProbs);
+    bbox.Draw(image, info, borderSize);
+  }
+}
+
 /*
  *  Return how much a vertical or horizontal line overlap, where `a` and `b` are
  *  mid-points and `aw` and `bw` are widths/heights of those lines.
@@ -504,7 +649,6 @@ class YOLOv3tiny {
       predictionsPerCell, anchors);
   }
 
-
   size_t imgSize;
   size_t classes;
   size_t predictionsPerCell;
@@ -514,9 +658,12 @@ class YOLOv3tiny {
   mlpack::DAGNetwork<> model;
 };
 
-int main(void) {
-  const std::string inputFile = "./images/dog.jpg";
-  const std::string outputFile = "output.jpg";
+int main(int argc, const char** argv) {
+  if (argc != 3)
+    throw std::logic_error("usage: ./main <input_image> <output_image>");
+
+  const std::string inputFile = argv[1];
+  const std::string outputFile = argv[2];
 
   mlpack::data::ImageInfo info;
   arma::mat image;
@@ -525,16 +672,23 @@ int main(void) {
   arma::mat newImage;
 
   LoadImage(inputFile, info, image);
-  LetterBox(info, image, newInfo, newImage);
-  SaveImage(outputFile, newInfo, newImage);
+  // LetterBox(info, image, newInfo, newImage);
 
-  arma::mat detections;
-  YOLOv3tiny model(416, 80, 3);
-  model.Training(false);
-  model.Predict(newImage, detections);
+  // arma::mat detections;
+  // YOLOv3tiny model(416, 80, 3);
+  // model.Training(false);
+  // model.Predict(newImage, detections);
+
+  arma::mat detections = arma::mat({
+    50, 50, 20, 20, 1.0, 0.3, 0.4, 0.3,
+    110, 150, 20, 20, 1.0, 0.5, 0.1, 0.4,
+  }).t();
+
+  DrawBoxes(detections, 2, 0.5, 2, 416, info, image);
+  SaveImage(outputFile, info, image);
 
   // detections shape should be (85, 2535)
-  std::cout << "Model output shape: " << model.OutputDimensions() << "\n";
+  // std::cout << "Model output shape: " << model.OutputDimensions() << "\n";
 
   return 0;
 }
