@@ -17,12 +17,19 @@
  */
 
 #include <mlpack.hpp>
+#include <unordered_map>
+
+struct Image
+{
+  mlpack::data::ImageInfo info;
+  arma::mat data;
+};
 
 void CheckImage(const mlpack::data::ImageInfo& info,
                 const arma::mat& data)
 {
   size_t expectedRows = info.Width() * info.Height() * info.Channels();
-  if (data.n_rows != expectedRows || data.n_cols != 1 || info.Channels() != 3)
+  if (data.n_rows != expectedRows || data.n_cols != 1)
   {
     std::ostringstream errMessage;
     errMessage << "Image is the incorrect shape. \n"
@@ -41,8 +48,11 @@ void CheckImage(const mlpack::data::ImageInfo& info,
  */
 void LoadImage(const std::string& file,
                mlpack::data::ImageInfo& info,
-               arma::mat& data)
+               arma::mat& data,
+               const bool grayscale = false)
 {
+  if (grayscale)
+    info.Channels() = 1;
   Load(file, data, info, true);
   data /= 255.0f;
   data = mlpack::data::ImageLayout(data, info);
@@ -79,6 +89,27 @@ std::vector<std::string> GetLabels(const std::string& path)
   while (std::getline(file, line))
     labels.push_back(line);
   return labels;
+}
+
+// There should be 8 sizes per letter.
+// each png should start with letter in ascii decimal
+// example d size 7: dir/100_7.png
+void GetAlphabet(const std::string& dir,
+                 std::unordered_map<std::string, Image>& alphabet)
+{
+  alphabet.clear();
+  for (size_t size = 0; size < 8; size++)
+  {
+    std::string end = "_" + std::to_string(size);
+    for (char letter = ' '; letter <= '~'; letter++)
+    {
+      std::string key = std::to_string((int)letter) + end;
+      std::string filename = dir + "/" + key + ".png";
+      Image image;
+      LoadImage(filename, image.info, image.data, true);
+      alphabet.insert({ key, image });
+    }
+  }
 }
 
 /*
@@ -523,7 +554,6 @@ class YOLOv3tiny {
     scale = { 2.0, 2.0 };
 
     model = mlpack::DAGNetwork();
-    model.SetNetworkMode(false);
     model.InputDimensions() = { imgSize, imgSize, 3 };
 
     size_t convolution0 = Convolution(16, 3);
@@ -679,19 +709,26 @@ class YOLOv3tiny {
 };
 
 int main(int argc, const char** argv) {
-  if (argc != 3)
-    throw std::logic_error("usage: ./main <input_image> <output_image>");
+  // if (argc != 4)
+  //   throw std::logic_error("usage: ./main <labels> <input_image> <output_image>");
+  //
+  // const std::string inputFile = argv[2];
+  // const std::string outputFile = argv[3];
+  //
+  // mlpack::data::ImageInfo info;
+  // arma::mat image;
+  //
+  // mlpack::data::ImageInfo newInfo(416, 416, 3);
+  // arma::mat newImage;
 
-  const std::string inputFile = argv[1];
-  const std::string outputFile = argv[2];
+  std::unordered_map<std::string, Image> alphabet;
+  GetAlphabet("../data/labels/", alphabet);
+  SaveImage("../output.jpg", alphabet["100_7"].info, alphabet["100_7"].data);
 
-  mlpack::data::ImageInfo info;
-  arma::mat image;
+  // std::vector<std::string> labels = GetLabels(argv[1]); // TODO: assert 80 for coco
+  // std::cout << labels.size() << "\n";
 
-  mlpack::data::ImageInfo newInfo(416, 416, 3);
-  arma::mat newImage;
-
-  LoadImage(inputFile, info, image);
+  // LoadImage(inputFile, info, image);
   // LetterBox(info, image, newInfo, newImage);
 
   // arma::mat detections;
@@ -699,13 +736,13 @@ int main(int argc, const char** argv) {
   // model.Training(false);
   // model.Predict(newImage, detections);
 
-  arma::mat detections = arma::mat({
-    50, 50, 20, 20, 1.0, 0.3, 0.4, 0.3,
-    110, 150, 20, 20, 1.0, 0.5, 0.1, 0.4,
-  }).t();
-
-  DrawBoxes(detections, 2, 0.5, 2, 416, info, image);
-  SaveImage(outputFile, info, image);
+  // arma::mat detections = arma::mat({
+  //   50, 50, 20, 20, 1.0, 0.3, 0.4, 0.3,
+  //   110, 150, 20, 20, 1.0, 0.5, 0.1, 0.4,
+  // }).t();
+  //
+  // DrawBoxes(detections, 2, 0.5, 2, 416, info, image);
+  // SaveImage(outputFile, info, image);
 
   // detections shape should be (85, 2535)
   // std::cout << "Model output shape: " << model.OutputDimensions() << "\n";
