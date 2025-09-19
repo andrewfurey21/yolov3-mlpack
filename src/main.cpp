@@ -19,16 +19,22 @@
 
 #include <mlpack.hpp>
 
-// TODO: use this instead.
 struct Image
 {
+  Image() {}
+
+  Image(const arma::mat& data, mlpack::data::ImageInfo& info) :
+    data(data), info(info)
+  {}
+
   mlpack::data::ImageInfo info;
   arma::mat data;
 };
 
-void CheckImage(const mlpack::data::ImageInfo& info,
-                const arma::mat& data)
+void CheckImage(const Image& image)
 {
+  const arma::mat data = image.data;
+  const mlpack::data::ImageInfo info = image.info;
   size_t expectedRows = info.Width() * info.Height() * info.Channels();
   if (data.n_rows != expectedRows || data.n_cols != 1)
   {
@@ -48,35 +54,32 @@ void CheckImage(const mlpack::data::ImageInfo& info,
  *  Loads an image, normalize it values and convert to mlpack layout.
  */
 void LoadImage(const std::string& file,
-               mlpack::data::ImageInfo& info,
-               arma::mat& data,
+               Image& image,
                const bool grayscale = false)
 {
   if (grayscale)
-    info.Channels() = 1;
-  Load(file, data, info, true);
-  data /= 255.0f;
-  data = mlpack::data::ImageLayout(data, info);
+    image.info.Channels() = 1;
+  Load(file, image.data, image.info, true);
+  image.data /= 255.0f;
+  image.data = mlpack::data::ImageLayout(image.data, image.info);
 
   // Hack so that other image processing functions work.
   if (grayscale)
   {
-    data = arma::repmat(data, 3, 1);
-    info.Channels() = 3;
+    image.data = arma::repmat(image.data, 3, 1);
+    image.info.Channels() = 3;
   }
 }
 
 /*
  *  Saves an image back, reset RGB range back to 0-255 and convert to stb layout
  */
-void SaveImage(const std::string& file,
-               mlpack::data::ImageInfo& info,
-               arma::mat& data)
+void SaveImage(const std::string& file, Image& image)
 {
-  CheckImage(info, data);
-  arma::mat stbData = mlpack::data::STBLayout(data, info);
+  CheckImage(image);
+  arma::mat stbData = mlpack::data::STBLayout(image.data, image.info);
   stbData *= 255;
-  Save(file, stbData, info, true);
+  Save(file, stbData, image.info, true);
 }
 
 /*
@@ -123,7 +126,7 @@ std::unordered_map<char, Image> GetAlphabet(const std::string& dir)
   {
     std::string filename = dir + "/" + AlphabetKey(letter, 1) + ".png";
     Image image;
-    LoadImage(filename, image.info, image.data, true);
+    LoadImage(filename, image, true);
     alphabet.insert({ letter, image });
   }
   return alphabet;
@@ -132,26 +135,23 @@ std::unordered_map<char, Image> GetAlphabet(const std::string& dir)
 /*
  *  Resizes an image using `resizedInfo`.
  */
-void ResizeImage(const mlpack::data::ImageInfo& info,
-                 const arma::mat& image,
-                 const mlpack::data::ImageInfo& resizedInfo,
-                 arma::mat& resizedImage)
+void ResizeImage(const Image& input, Image& output)
 {
-  size_t newWidth = resizedInfo.Width();
-  size_t newHeight = resizedInfo.Height();
+  size_t newWidth = output.info.Width();
+  size_t newHeight = output.info.Height();
 
-  size_t width = info.Width();
-  size_t height = info.Height();
+  size_t width = input.info.Width();
+  size_t height = input.info.Height();
 
-  CheckImage(info, image);
+  CheckImage(input);
 
-  resizedImage.clear();
-  resizedImage = arma::mat(newWidth * newHeight * resizedInfo.Channels(), 1);
+  output.data.clear();
+  output.data = arma::mat(newWidth * newHeight * output.info.Channels(), 1);
 
   double xRatio = (double)(width - 1) / (newWidth - 1);
   double yRatio = (double)(height - 1) / (newHeight - 1);
 
-  for (size_t channel = 0; channel < info.Channels(); channel++)
+  for (size_t channel = 0; channel < input.info.Channels(); channel++)
   {
     for (size_t w = 0; w < newWidth; w++)
     {
@@ -166,10 +166,10 @@ void ResizeImage(const mlpack::data::ImageInfo& info,
         size_t xWeight = (xRatio * w) - xLow;
         size_t yWeight = (yRatio * h) - yLow;
 
-        double a = image.at(xLow + yLow * width + channel * width * height);
-        double b = image.at(xLow + yHigh * width + channel * width * height);
-        double c = image.at(xHigh + yLow * width + channel * width * height);
-        double d = image.at(xHigh + yHigh * width + channel * width * height);
+        double a = input.data.at(xLow + yLow * width + channel * width * height);
+        double b = input.data.at(xLow + yHigh * width + channel * width * height);
+        double c = input.data.at(xHigh + yLow * width + channel * width * height);
+        double d = input.data.at(xHigh + yHigh * width + channel * width * height);
 
         double value =
                 a * (1 - xWeight) * (1 - yWeight) +
@@ -177,7 +177,7 @@ void ResizeImage(const mlpack::data::ImageInfo& info,
                 c * yWeight * (1 - xWeight) +
                 d * xWeight * yWeight;
 
-        resizedImage.at(w + h * newWidth + channel * newWidth * newHeight) =
+        output.data.at(w + h * newWidth + channel * newWidth * newHeight) =
           value;
       }
     }
@@ -187,34 +187,32 @@ void ResizeImage(const mlpack::data::ImageInfo& info,
 /*
  *  Embed `src` image within `dst` image starting at offset (dx, dy).
  */
-void EmbedImage(const mlpack::data::ImageInfo& srcInfo, const arma::mat& src,
-                const mlpack::data::ImageInfo& dstInfo, arma::mat& dst,
-                const size_t dx, const size_t dy) {
+void EmbedImage(const Image& src, Image& dst, const size_t dx, const size_t dy)
+{
+  CheckImage(src);
+  CheckImage(dst);
 
-  CheckImage(srcInfo, src);
-  CheckImage(dstInfo, dst);
+  size_t width = std::min(src.info.Width() + dx, dst.info.Width());
+  size_t height = std::min(src.info.Height() + dy, dst.info.Height());
 
-  size_t width = std::min(srcInfo.Width() + dx, dstInfo.Width());
-  size_t height = std::min(srcInfo.Height() + dy, dstInfo.Height());
-
-  for (size_t c = 0; c < srcInfo.Channels(); c++)
+  for (size_t c = 0; c < src.info.Channels(); c++)
   {
-    for (size_t i = 0; i < srcInfo.Width(); i++)
+    for (size_t i = 0; i < src.info.Width(); i++)
     {
-      if (dx + i >= dstInfo.Width())
+      if (dx + i >= dst.info.Width())
         break;
 
-      for (size_t j = 0; j < srcInfo.Height(); j++)
+      for (size_t j = 0; j < src.info.Height(); j++)
       {
-        if (dy + j >= dstInfo.Height())
+        if (dy + j >= dst.info.Height())
           break;
 
-        size_t sourceIndex = i + j * srcInfo.Width() +
-          c * srcInfo.Height() * srcInfo.Width();
+        size_t sourceIndex = i + j * src.info.Width() +
+          c * src.info.Height() * src.info.Width();
 
-        size_t destIndex = (i + dx) + (j + dy) * dstInfo.Width() +
-          c * dstInfo.Height() * dstInfo.Width();
-        dst.at(destIndex) = src.at(sourceIndex);
+        size_t destIndex = (i + dx) + (j + dy) * dst.info.Width() +
+          c * dst.info.Height() * dst.info.Width();
+        dst.data.at(destIndex) = src.data.at(sourceIndex);
       }
     }
   }
@@ -234,32 +232,32 @@ void EmbedImage(const mlpack::data::ImageInfo& srcInfo, const arma::mat& src,
  *  is done with the same weights and other gray values, this will worsen
  *  the results of the network.
  */
-void LetterBox(const mlpack::data::ImageInfo& srcInfo, const arma::mat& src,
-               const mlpack::data::ImageInfo& dstInfo, arma::mat& dst,
-               const double grayValue = 0.5)
+void LetterBox(const Image& src, Image& dst, const double grayValue = 0.5)
 {
-  CheckImage(srcInfo, src);
-  dst.clear();
-  dst = arma::mat(dstInfo.Width() * dstInfo.Height() * dstInfo.Channels(), 1);
+  CheckImage(src);
+  dst.data.clear();
+  dst.data = arma::mat(dst.info.Width() * dst.info.Height() * dst.info.Channels(), 1);
 
   size_t width, height;
-  if (dstInfo.Width() / srcInfo.Width() > dstInfo.Height() / srcInfo.Height())
+  if (dst.info.Width() / src.info.Width() > dst.info.Height() / src.info.Height())
   {
-    height = dstInfo.Height();
-    width = srcInfo.Width() * dstInfo.Height() / srcInfo.Height();
+    height = dst.info.Height();
+    width = src.info.Width() * dst.info.Height() / src.info.Height();
   }
   else
   {
-    width = dstInfo.Width();
-    height = srcInfo.Height() * dstInfo.Width() / srcInfo.Width();
+    width = dst.info.Width();
+    height = src.info.Height() * dst.info.Width() / src.info.Width();
   }
 
-  dst.fill(grayValue);
+  dst.data.fill(grayValue);
   arma::mat resizedSrc;
-  mlpack::data::ImageInfo resizedInfo(width, height, srcInfo.Channels());
-  ResizeImage(srcInfo, src, resizedInfo, resizedSrc);
-  EmbedImage(resizedInfo, resizedSrc, dstInfo, dst, (dstInfo.Width() - width)/2,
-    (dstInfo.Height() - height)/2);
+  mlpack::data::ImageInfo resizedInfo(width, height, src.info.Channels());
+
+  Image resizedImage(resizedSrc, resizedInfo);
+  ResizeImage(src, resizedImage);
+  EmbedImage(resizedImage, dst, (dst.info.Width() - width)/2,
+    (dst.info.Height() - height)/2);
 }
 
 class BoundingBox
@@ -283,9 +281,13 @@ class BoundingBox
     objectProb = classProbs.at(objectIndex);
   }
 
-  void Draw(arma::mat& image, const mlpack::data::ImageInfo& info,
-            const size_t borderSize, const std::vector<std::string>& labels, const std::unordered_map<char, Image> &alphabet, const double letterSize)
+  void Draw(Image& image,
+            const size_t borderSize,
+            const std::vector<std::string>& labels,
+            const std::unordered_map<char, Image> &alphabet,
+            const double letterSize)
   {
+    const mlpack::data::ImageInfo& info = image.info;
     double x1 = std::clamp<double>(this->x1, 0, info.Width() - 1);
     double x2 = std::clamp<double>(this->x2, 0, info.Width() - 1);
     double y1 = std::clamp<double>(this->y1, 0, info.Height() - 1);
@@ -307,16 +309,16 @@ class BoundingBox
         int rTop = x + yTop * info.Width();
         int gTop = x + yTop * info.Width() + info.Height() * info.Width();
         int bTop = x + yTop * info.Width() + info.Height() * info.Width() * 2;
-        image(rTop, 0) = red;
-        image(gTop, 0) = green;
-        image(bTop, 0) = blue;
+        image.data(rTop, 0) = red;
+        image.data(gTop, 0) = green;
+        image.data(bTop, 0) = blue;
 
         int rBot = x + yBot * info.Width();
         int gBot = x + yBot * info.Width() + info.Height() * info.Width();
         int bBot = x + yBot * info.Width() + info.Height() * info.Width() * 2;
-        image(rBot, 0) = red;
-        image(gBot, 0) = green;
-        image(bBot, 0) = blue;
+        image.data(rBot, 0) = red;
+        image.data(gBot, 0) = green;
+        image.data(bBot, 0) = blue;
       }
 
       for (int y = y1; y <= y2; y++)
@@ -329,24 +331,23 @@ class BoundingBox
         int rL = xL + y * info.Width();
         int gL = xL + y * info.Width() + info.Height() * info.Width();
         int bL = xL + y * info.Width() + info.Height() * info.Width() * 2;
-        image(rL, 0) = red;
-        image(gL, 0) = green;
-        image(bL, 0) = blue;
+        image.data(rL, 0) = red;
+        image.data(gL, 0) = green;
+        image.data(bL, 0) = blue;
 
         int rR = xR + y * info.Width();
         int gR = xR + y * info.Width() + info.Height() * info.Width();
         int bR = xR + y * info.Width() + info.Height() * info.Width() * 2;
-        image(rR, 0) = red;
-        image(gR, 0) = green;
-        image(bR, 0) = blue;
+        image.data(rR, 0) = red;
+        image.data(gR, 0) = green;
+        image.data(bR, 0) = blue;
       }
     }
     std::cout << labels[objectIndex] << ": " << objectProb * 100 << "%\n";
-    DrawLabel(image, info, labels[objectIndex], letterSize, alphabet);
+    DrawLabel(image, labels[objectIndex], letterSize, alphabet);
   }
 
-  void DrawLabel(arma::mat& image,
-                 const mlpack::data::ImageInfo& info,
+  void DrawLabel(Image& image,
                  const std::string& label,
                  const double size,
                  const std::unordered_map<char, Image>& alphabet)
@@ -357,11 +358,13 @@ class BoundingBox
       char letter = label[i];
       Image letterImage = alphabet.at(letter);
       Image resized;
-      resized.info = mlpack::data::ImageInfo(letterImage.info.Width() * size, letterImage.info.Height() * size, 3);
-      ResizeImage(letterImage.info, letterImage.data, resized.info, resized.data);
-      EmbedImage(resized.info, resized.data, info, image, dx, y1);
+      resized.info = mlpack::data::ImageInfo(letterImage.info.Width() * size,
+        letterImage.info.Height() * size, 3);
+
+      ResizeImage(letterImage, resized);
+      EmbedImage(resized, image, dx, y1);
       dx += resized.info.Width();
-      if (dx > info.Width())
+      if (dx > image.info.Width())
         break;
     }
   }
@@ -389,10 +392,9 @@ void DrawBoxes(const arma::mat& modelOutput,
                const double letterSize,
                const std::vector<std::string>& labels,
                const std::unordered_map<char, Image>& alphabet,
-               const mlpack::data::ImageInfo& info,
-               arma::mat& image)
+               Image& image)
 {
-  CheckImage(info, image);
+  CheckImage(image);
   if (modelOutput.n_cols != 1)
   {
     std::ostringstream errMessage;
@@ -410,8 +412,8 @@ void DrawBoxes(const arma::mat& modelOutput,
     throw std::logic_error(errMessage.str());
   }
 
-  double xRatio = (double)info.Width() / imgSize;
-  double yRatio = (double)info.Height() / imgSize;
+  double xRatio = (double)image.info.Width() / imgSize;
+  double yRatio = (double)image.info.Height() / imgSize;
 
   const size_t predictionSize = modelOutput.n_rows / numBoxes;
   for (size_t box = 0; box < numBoxes; box++)
@@ -431,7 +433,7 @@ void DrawBoxes(const arma::mat& modelOutput,
       prediction.submat(5, 0, prediction.n_rows - 1, 0);
 
     BoundingBox bbox(x, y, w, h, classProbs);
-    bbox.Draw(image, info, borderSize, labels, alphabet, letterSize);
+    bbox.Draw(image, borderSize, labels, alphabet, letterSize);
   }
 }
 
@@ -756,23 +758,24 @@ class YOLOv3tiny {
 int main(int argc, const char** argv) {
   // Settings
   const size_t numClasses = 80;
+  const std::string lettersDir = "../data/labels";
+  const std::string labelsFile = "../data/coco.names";
 
-  if (argc != 4)
-    throw std::logic_error("usage: ./main <labels> <input_image> <output_image>");
+  if (argc != 3)
+    throw std::logic_error("usage: ./main <input_image> <output_image>");
 
-  const std::string inputFile = argv[2];
-  const std::string outputFile = argv[3];
+  const std::string inputFile = argv[1];
+  const std::string outputFile = argv[2];
 
-  mlpack::data::ImageInfo info;
-  arma::mat image;
+  Image image;
 
   mlpack::data::ImageInfo newInfo(416, 416, 3);
   arma::mat newImage;
 
-  std::unordered_map<char, Image> alphabet = GetAlphabet("../data/labels/");
-  const std::vector<std::string> labels = GetLabels(argv[1], numClasses);
+  std::unordered_map<char, Image> alphabet = GetAlphabet(lettersDir);
+  const std::vector<std::string> labels = GetLabels(labelsFile, numClasses);
 
-  LoadImage(inputFile, info, image);
+  LoadImage(inputFile, image);
   // LetterBox(info, image, newInfo, newImage);
 
   // arma::mat detections;
@@ -785,8 +788,8 @@ int main(int argc, const char** argv) {
     110, 150, 20, 20, 1.0, 0.5, 0.1, 0.4,
   }).t();
 
-  DrawBoxes(detections, 2, 0.5, 2, 416, 0.7, labels, alphabet, info, image);
-  SaveImage(outputFile, info, image);
+  DrawBoxes(detections, 2, 0.5, 2, 416, 0.7, labels, alphabet, image);
+  SaveImage(outputFile, image);
 
   // detections shape should be (85, 2535)
   // std::cout << "Model output shape: " << model.OutputDimensions() << "\n";

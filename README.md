@@ -2,4 +2,4 @@
 
 Implementation of the yolov3-tiny architecture in mlpack.
 
-requires arma15 (repcube)
+requires arma15(or master?) (repcube)
