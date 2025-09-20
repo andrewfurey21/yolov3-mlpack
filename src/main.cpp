@@ -23,7 +23,13 @@ struct Image
 {
   Image() {}
 
-  Image(const arma::mat& data, mlpack::data::ImageInfo& info) :
+  Image(const size_t width, const size_t height, const size_t channels)
+  {
+    info = mlpack::data::ImageInfo(width, height, channels);
+    data.set_size(width * height * channels, 1);
+  }
+
+  Image(const arma::mat& data, const mlpack::data::ImageInfo& info) :
     data(data), info(info)
   {}
 
@@ -425,10 +431,10 @@ void DrawBoxes(const arma::mat& modelOutput,
       continue;
 
     double x, y, w, h;
-    x = prediction.at(0) * xRatio;
-    y = prediction.at(1) * yRatio;
-    w = prediction.at(2) * xRatio;
-    h = prediction.at(3) * yRatio;
+    x = prediction.at(0, 0) * xRatio;
+    y = prediction.at(1, 0) * yRatio;
+    w = prediction.at(2, 0) * xRatio;
+    h = prediction.at(3, 0) * yRatio;
     const arma::mat& classProbs =
       prediction.submat(5, 0, prediction.n_rows - 1, 0);
 
@@ -591,7 +597,8 @@ class YOLOv3Layer : public mlpack::Layer<MatType>
 template <typename MatType = arma::mat>
 class YOLOv3tiny {
  public:
-  YOLOv3tiny(size_t imgSize, size_t classes, size_t predictionsPerCell) :
+  YOLOv3tiny(size_t imgSize, size_t classes, size_t predictionsPerCell,
+             const std::string& weightsFile) :
     imgSize(imgSize),
     classes(classes),
     predictionsPerCell(predictionsPerCell)
@@ -636,6 +643,22 @@ class YOLOv3tiny {
     // the Identity layer for pure concatentation, and no other compute.
     size_t concatLayer22 = model.Add<mlpack::Identity<MatType>>();
 
+    layers = {
+      convolution0,
+      convolution2,
+      convolution4,
+      convolution6,
+      convolution8,
+      convolution10,
+      convolution12,
+      convolution13,
+      convolution14,
+      convolution15,
+      convolution17,
+      convolution19,
+      convolution20
+    };
+
     model.Connect(convolution0, maxPool1);
     model.Connect(maxPool1, convolution2);
     model.Connect(convolution2, maxPool3);
@@ -672,6 +695,8 @@ class YOLOv3tiny {
     model.Connect(detections21, concatLayer22);
 
     model.Reset();
+
+    LoadWeights(weightsFile);
   }
 
   void Training(const bool training)
@@ -681,7 +706,10 @@ class YOLOv3tiny {
 
   void Predict(const MatType& input, MatType& output)
   {
-    CheckImage(mlpack::data::ImageInfo(imgSize, imgSize, 3), input);
+    Image image;
+    image.data = input;
+    image.info = mlpack::data::ImageInfo(imgSize, imgSize, 3);
+    CheckImage(image);
     model.Predict(input, output);
   }
 
@@ -739,11 +767,91 @@ class YOLOv3tiny {
     return model.Add(block);
   }
 
-  size_t YOLO(const size_t imgSize, size_t gridSize,
+  size_t YOLO(const size_t imgSize, const size_t gridSize,
               const std::vector<double>& anchors)
   {
     return model.Add<YOLOv3Layer<MatType>>(imgSize, numAttributes, gridSize,
       predictionsPerCell, anchors);
+  }
+
+  size_t LoadConvolution(std::ifstream& f,
+                         const size_t layer,
+                         const size_t inChannels,
+                         const size_t outChannels,
+                         const size_t kernelSize,
+                         const bool output = false,
+                         const bool batchNorm = true)
+  {
+    size_t weightsSize = kernelSize * kernelSize * inChannels * outChannels;
+
+    std::vector<float> biases(outChannels);
+    std::vector<float> scales(outChannels);
+    std::vector<float> rollingMeans(outChannels);
+    std::vector<float> rollingVars(outChannels);
+    std::vector<float> weights(weightsSize);
+    f.read(reinterpret_cast<char *>(biases.data()), outChannels * sizeof(float));
+    if (batchNorm)
+    {
+      f.read(reinterpret_cast<char *>(scales.data()), outChannels * sizeof(float));
+      f.read(reinterpret_cast<char *>(rollingMeans.data()), outChannels * sizeof(float));
+      f.read(reinterpret_cast<char *>(rollingVars.data()), outChannels * sizeof(float));
+    }
+    f.read(reinterpret_cast<char *>(weights.data()), weightsSize * sizeof(float));
+
+    if (f.eof()) throw std::runtime_error("Reached end of weights.");
+    if (f.fail()) throw std::runtime_error("Reading weights failed.");
+    if (f.bad()) throw std::runtime_error("Stream corrupted");
+
+    if (output) {
+      std::cout << "-------------------------------------\n";
+      std::cout << "Biases: " << biases[3] << "\n";
+      if (batchNorm) {
+        std::cout << "Scales: " << scales[3] << "\n";
+        std::cout << "Rolling mean: " << rollingMeans[3] << "\n";
+        std::cout << "Rolling var: " << rollingVars[3] << "\n";
+      }
+      std::cout << "Convolution: " << weights[3] << "\n";
+    }
+
+    return (batchNorm ? outChannels * 4 : outChannels) + weightsSize;
+  }
+
+  /*
+   * Load weights from the darknet .weights format.
+   *
+   * XXX: Only works for yolov3-tiny config, from
+   * https://github.com/pjreddie/darknet/blob/master/cfg/yolov3-tiny.cfg
+   *
+   */
+  void LoadWeights(const std::string& file)
+  {
+    parameters.clear();
+    parameters.set_size(model.WeightSize());
+
+    std::ifstream weightsFile(file, std::ios::binary);
+    if (!weightsFile)
+      throw std::runtime_error("Could not open " + file);
+
+    // Skip header.
+    weightsFile.seekg(20, std::ios::cur);
+
+    size_t total = 0;
+    total += LoadConvolution(weightsFile, layers[0], 3, 16, 3, true);
+    total += LoadConvolution(weightsFile, layers[1], 16, 32, 3, true);
+    total += LoadConvolution(weightsFile, layers[2], 32, 64, 3, true);
+    total += LoadConvolution(weightsFile, layers[3], 64, 128, 3, true);
+    total += LoadConvolution(weightsFile, layers[4], 128, 256, 3, true);
+    total += LoadConvolution(weightsFile, layers[5], 256, 512, 3, true);
+    total += LoadConvolution(weightsFile, layers[6], 512, 1024, 3, true);
+    total += LoadConvolution(weightsFile, layers[7], 1024, 256, 1, true);
+    total += LoadConvolution(weightsFile, layers[8], 256, 512, 3, true);
+    total += LoadConvolution(weightsFile, layers[9], 512, 255, 1, true, false);
+    total += LoadConvolution(weightsFile, layers[10], 256, 128, 1, true);
+    total += LoadConvolution(weightsFile, layers[11], 384, 256, 3, true);
+    total += LoadConvolution(weightsFile, layers[12], 256, 255, 1, true, false);
+
+    model.Parameters() = parameters;
+    std::cout << "Total Weights: " << total << "\n";
   }
 
   size_t imgSize;
@@ -751,15 +859,28 @@ class YOLOv3tiny {
   size_t predictionsPerCell;
   size_t numAttributes;
   std::vector<double> scale;
+  std::vector<size_t> layers;
 
   mlpack::DAGNetwork<> model;
+
+  arma::mat parameters;
 };
 
 int main(int argc, const char** argv) {
   // Settings
   const size_t numClasses = 80;
+  const size_t imgSize = 416;
+  const size_t imgChannels = 3;
+  const size_t predictionsPerCell = 3;
+  const size_t numBoxes = 13 * 13 * 3 + 26 * 26 * 3;
+  const double ignoreProb = 0.6;
+  const size_t borderSize = 1;
+  const double letterSize = 0.5;
   const std::string lettersDir = "../data/labels";
   const std::string labelsFile = "../data/coco.names";
+  const std::string weightsFile = "../weights/yolov3-tiny.weights";
+  // const std::vector<double> anchors =
+  //   { 10, 14, 23, 27, 37, 58, 81, 82, 135, 169, 344, 319 };
 
   if (argc != 3)
     throw std::logic_error("usage: ./main <input_image> <output_image>");
@@ -767,32 +888,33 @@ int main(int argc, const char** argv) {
   const std::string inputFile = argv[1];
   const std::string outputFile = argv[2];
 
-  Image image;
-
-  mlpack::data::ImageInfo newInfo(416, 416, 3);
-  arma::mat newImage;
-
-  std::unordered_map<char, Image> alphabet = GetAlphabet(lettersDir);
+  const std::unordered_map<char, Image> alphabet = GetAlphabet(lettersDir);
   const std::vector<std::string> labels = GetLabels(labelsFile, numClasses);
 
+  Image image;
+  Image input(imgSize, imgSize, imgChannels);
+  arma::mat detections;
+
   LoadImage(inputFile, image);
-  // LetterBox(info, image, newInfo, newImage);
+  LetterBox(image, input);
 
-  // arma::mat detections;
-  // YOLOv3tiny model(416, 80, 3);
-  // model.Training(false);
-  // model.Predict(newImage, detections);
-
-  arma::mat detections = arma::mat({
-    50, 50, 20, 20, 1.0, 0.3, 0.4, 0.3,
-    110, 150, 20, 20, 1.0, 0.5, 0.1, 0.4,
-  }).t();
-
-  DrawBoxes(detections, 2, 0.5, 2, 416, 0.7, labels, alphabet, image);
-  SaveImage(outputFile, image);
-
-  // detections shape should be (85, 2535)
+  YOLOv3tiny model(imgSize, numClasses, predictionsPerCell, weightsFile);
+  model.Training(false);
+  // model.Predict(input.data, detections);
+  //
   // std::cout << "Model output shape: " << model.OutputDimensions() << "\n";
-
+  //
+  // DrawBoxes(detections,
+  //           numBoxes,
+  //           ignoreProb,
+  //           borderSize,
+  //           imgSize,
+  //           letterSize,
+  //           labels,
+  //           alphabet,
+  //           image);
+  //
+  // std::cout << "Saving to " << outputFile << ".\n";
+  // SaveImage(outputFile, image);
   return 0;
 }
