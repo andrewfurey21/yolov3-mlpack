@@ -529,7 +529,7 @@ class YOLOv3Layer : public mlpack::Layer<MatType>
     mlpack::MakeAlias(reshapedCube, output, numAttributes,
       predictionsPerCell * grid, batchSize);
 
-    MatType offset = arma::regspace(0, this->inputDimensions[0] - 1);
+    MatType offset = arma::regspace<MatType>(0, this->inputDimensions[0] - 1);
     CubeType xOffset = arma::repcube(offset, this->inputDimensions[0],
       predictionsPerCell, batchSize);
     CubeType yOffset = arma::repcube(arma::vectorise(arma::repmat(offset.t(),
@@ -594,7 +594,7 @@ class YOLOv3Layer : public mlpack::Layer<MatType>
   size_t predictionsPerCell;
 };
 
-template <typename MatType = arma::mat>
+template <typename MatType = arma::fmat>
 class YOLOv3tiny {
  public:
   YOLOv3tiny(size_t imgSize, size_t classes, size_t predictionsPerCell,
@@ -607,7 +607,12 @@ class YOLOv3tiny {
     numAttributes = 5 + classes;
     scale = { 2.0, 2.0 };
 
-    model = mlpack::DAGNetwork();
+    model = mlpack::DAGNetwork<
+      mlpack::EmptyLoss,
+      mlpack::RandomInitialization,
+      MatType
+    >();
+
     model.InputDimensions() = { imgSize, imgSize, 3 };
 
     size_t convolution0 = Convolution(16, 3);
@@ -632,7 +637,7 @@ class YOLOv3tiny {
 
     size_t convolution17 = Convolution(128, 1);
     // Upsample for more fine-grained detections.
-    size_t upsample18 = model.Add<mlpack::NearestInterpolation<MatType>>(scale);
+    size_t upsample18 = model.template Add<mlpack::NearestInterpolation<MatType>>(scale);
 
     // Detection head for smaller objects.
     size_t convolution19 = Convolution(256, 3);
@@ -641,7 +646,7 @@ class YOLOv3tiny {
 
     // the DAGNetwork class requires a layer for concatenations, so we use
     // the Identity layer for pure concatentation, and no other compute.
-    size_t concatLayer22 = model.Add<mlpack::Identity<MatType>>();
+    size_t concatLayer22 = model.template Add<mlpack::Identity<MatType>>();
 
     layers = {
       convolution0,
@@ -768,10 +773,10 @@ class YOLOv3tiny {
   }
 
   size_t YOLO(const size_t imgSize, const size_t gridSize,
-              const std::vector<double>& anchors)
+              const std::vector<typename MatType::elem_type>& anchors)
   {
-    return model.Add<YOLOv3Layer<MatType>>(imgSize, numAttributes, gridSize,
-      predictionsPerCell, anchors);
+    return model.template Add<YOLOv3Layer<MatType>>(imgSize, numAttributes,
+      gridSize, predictionsPerCell, anchors);
   }
 
   size_t LoadConvolution(std::ifstream& f,
@@ -852,6 +857,7 @@ class YOLOv3tiny {
 
     model.Parameters() = parameters;
     std::cout << "Total Weights: " << total << "\n";
+    weightsFile.close();
   }
 
   size_t imgSize;
@@ -861,9 +867,10 @@ class YOLOv3tiny {
   std::vector<double> scale;
   std::vector<size_t> layers;
 
-  mlpack::DAGNetwork<> model;
+  mlpack::DAGNetwork<mlpack::EmptyLoss, mlpack::RandomInitialization, MatType>
+    model;
 
-  arma::mat parameters;
+  MatType parameters;
 };
 
 int main(int argc, const char** argv) {
