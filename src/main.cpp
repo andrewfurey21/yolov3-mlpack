@@ -221,20 +221,15 @@ void EmbedImage(const Image& src, Image& dst, const size_t dx, const size_t dy)
   {
     for (size_t i = 0; i < src.info.Width(); i++)
     {
-      if (dx + i >= dst.info.Width())
+      if (dx + i >= dst.info.Width() || dx + i < 0)
         break;
 
       for (size_t j = 0; j < src.info.Height(); j++)
       {
-        if (dy + j >= dst.info.Height())
+        if (dy + j >= dst.info.Height() || dy + j < 0)
           break;
 
-        size_t sourceIndex = i + j * src.info.Width() +
-          c * src.info.Height() * src.info.Width();
-
-        size_t destIndex = (i + dx) + (j + dy) * dst.info.Width() +
-          c * dst.info.Height() * dst.info.Width();
-        dst.data.at(destIndex) = src.data.at(sourceIndex);
+        dst.SetPixel(i + dx, j + dy, c, src.GetPixel(i, j, c));
       }
     }
   }
