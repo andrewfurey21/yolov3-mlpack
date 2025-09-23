@@ -443,12 +443,12 @@ void DrawBoxes(const arma::fmat& modelOutput,
  *  Return how much a vertical or horizontal line overlap, where `a` and `b` are
  *  mid-points and `aw` and `bw` are widths/heights of those lines.
  */
-double lineOverlap(double a, double aw, double b, double bw) {
+double LineOverlap(double a, double aw, double b, double bw) {
   return std::abs(std::max(a - aw / 2, b - bw / 2) -
                   std::min(a + aw / 2, b + bw / 2));
 }
 
-template <typename MatType = arma::mat>
+template <typename MatType = arma::fmat>
 class YOLOv3Layer : public mlpack::Layer<MatType>
 {
  public:
@@ -519,7 +519,7 @@ class YOLOv3Layer : public mlpack::Layer<MatType>
       batchSize);
 
     CubeType outputCube(grid * numAttributes, predictionsPerCell, batchSize,
-      arma::fill::none);
+      arma::fill::zeros);
 
     CubeType reshapedCube;
     mlpack::MakeAlias(reshapedCube, output, numAttributes,
@@ -532,6 +532,7 @@ class YOLOv3Layer : public mlpack::Layer<MatType>
       this->inputDimensions[0], 1)), 1, predictionsPerCell, batchSize);
 
     const size_t cols = predictionsPerCell - 1;
+    // TODO: just do activation, and have post processing function. makes training faster
     // x
     outputCube.tube(0, 0, grid - 1, cols) =
       (xOffset + 1 / (1 + arma::exp(-inputCube.tube(0, 0, grid - 1, cols))))
@@ -554,9 +555,10 @@ class YOLOv3Layer : public mlpack::Layer<MatType>
 
     // apply logistic sigmoid to objectness and classification logits.
     outputCube.tube(grid * 4, 0, outputCube.n_rows - 1, cols) =
-      1 / (1 + arma::exp(-inputCube.tube(grid * 4, 0, inputCube.n_rows - 1, cols)));
+      1. / (1. + arma::exp(-inputCube.tube(grid * 4, 0, inputCube.n_rows - 1, cols)));
 
-    for (size_t i = 0; i < outputCube.n_slices; i++)
+    // Reshape, for each batch item.
+    for (size_t i = 0; i < reshapedCube.n_slices; i++)
     {
       reshapedCube.slice(i) =
         arma::reshape(
@@ -690,7 +692,7 @@ class YOLOv3tiny {
     model.Connect(convolution19, convolution20);
     model.Connect(convolution20, detections21);
     // Again, set axis not necessary, since default is channels.
- 
+
     // Concatenation order shouldn't matter.
     model.Connect(detections16, concatLayer22);
     model.Connect(detections21, concatLayer22);
@@ -775,16 +777,21 @@ class YOLOv3tiny {
       gridSize, predictionsPerCell, anchors);
   }
 
+  using CubeType = typename GetCubeType<MatType>::type;
+  // Kind of naive implementation, could probably be improved, maybe use
+  // armadillo instead of std::vector for loading.
   size_t LoadConvolution(std::ifstream& f,
                          const size_t layer,
                          const size_t inChannels,
                          const size_t outChannels,
                          const size_t kernelSize,
-                         const bool output = false,
+                         const size_t offset,
                          const bool batchNorm = true)
   {
     size_t weightsSize = kernelSize * kernelSize * inChannels * outChannels;
+    size_t total = (outChannels * batchNorm) + outChannels + weightsSize;
 
+    // Should just use armadillo instead.
     std::vector<float> biases(outChannels);
     std::vector<float> scales(outChannels);
     std::vector<float> rollingMeans(outChannels);
@@ -799,22 +806,44 @@ class YOLOv3tiny {
     }
     f.read(reinterpret_cast<char *>(weights.data()), weightsSize * sizeof(float));
 
-    if (f.eof()) throw std::runtime_error("Reached end of weights.");
-    if (f.fail()) throw std::runtime_error("Reading weights failed.");
-    if (f.bad()) throw std::runtime_error("Stream corrupted");
+    MatType layerParams;
+    mlpack::MakeAlias<MatType>(layerParams, parameters, total, 1, offset);
 
-    if (output) {
-      std::cout << "-------------------------------------\n";
-      std::cout << "Biases: " << biases[3] << "\n";
-      if (batchNorm) {
-        std::cout << "Scales: " << scales[3] << "\n";
-        std::cout << "Rolling mean: " << rollingMeans[3] << "\n";
-        std::cout << "Rolling var: " << rollingVars[3] << "\n";
-      }
-      std::cout << "Convolution: " << weights[3] << "\n";
+    // All layers must be MultiLayer, otherwise undefined behaviour.
+    mlpack::MultiLayer<MatType>* layerPtr =
+      static_cast<mlpack::MultiLayer<MatType>*>(model.Network()[layer]);
+
+    std::vector<float> totalWeights;
+    totalWeights.reserve(total);
+    if(batchNorm)
+    {
+      // Layer[1] should be a BatchNorm layer.
+      mlpack::BatchNorm<MatType>* bn =
+        static_cast<mlpack::BatchNorm<MatType>*>(layerPtr->Network()[1]);
+      bn->TrainingMean() = MatType(rollingMeans);
+      bn->TrainingVariance() = MatType(rollingVars);
+
+      totalWeights.insert(totalWeights.end(), weights.begin(), weights.end());
+      totalWeights.insert(totalWeights.end(), scales.begin(), scales.end());
+      totalWeights.insert(totalWeights.end(), biases.begin(), biases.end());
+    }
+    else
+    {
+      totalWeights.insert(totalWeights.end(), weights.begin(), weights.end());
+      totalWeights.insert(totalWeights.end(), biases.begin(), biases.end());
     }
 
-    return (batchNorm ? outChannels * 4 : outChannels) + weightsSize;
+    if (layerPtr->WeightSize() != total)
+    {
+      std::ostringstream errMessage;
+      errMessage << "Layer weight size ( " << layerPtr->WeightSize()
+                 <<  " ) is not the same as total weight size ( "
+                 << total << " ).";
+      throw std::logic_error(errMessage.str());
+    }
+
+    layerParams = MatType(totalWeights);
+    return total;
   }
 
   /*
@@ -827,7 +856,7 @@ class YOLOv3tiny {
   void LoadWeights(const std::string& file)
   {
     parameters.clear();
-    parameters.set_size(model.WeightSize());
+    parameters.set_size(model.WeightSize(), 1);
 
     std::ifstream weightsFile(file, std::ios::binary);
     if (!weightsFile)
@@ -837,22 +866,23 @@ class YOLOv3tiny {
     weightsFile.seekg(20, std::ios::cur);
 
     size_t total = 0;
-    total += LoadConvolution(weightsFile, layers[0], 3, 16, 3, true);
-    total += LoadConvolution(weightsFile, layers[1], 16, 32, 3, true);
-    total += LoadConvolution(weightsFile, layers[2], 32, 64, 3, true);
-    total += LoadConvolution(weightsFile, layers[3], 64, 128, 3, true);
-    total += LoadConvolution(weightsFile, layers[4], 128, 256, 3, true);
-    total += LoadConvolution(weightsFile, layers[5], 256, 512, 3, true);
-    total += LoadConvolution(weightsFile, layers[6], 512, 1024, 3, true);
-    total += LoadConvolution(weightsFile, layers[7], 1024, 256, 1, true);
-    total += LoadConvolution(weightsFile, layers[8], 256, 512, 3, true);
-    total += LoadConvolution(weightsFile, layers[9], 512, 255, 1, true, false);
-    total += LoadConvolution(weightsFile, layers[10], 256, 128, 1, true);
-    total += LoadConvolution(weightsFile, layers[11], 384, 256, 3, true);
-    total += LoadConvolution(weightsFile, layers[12], 256, 255, 1, true, false);
+    total += LoadConvolution(weightsFile, layers[0], 3, 16, 3, total);
+    total += LoadConvolution(weightsFile, layers[1], 16, 32, 3, total);
+    total += LoadConvolution(weightsFile, layers[2], 32, 64, 3, total);
+    total += LoadConvolution(weightsFile, layers[3], 64, 128, 3, total);
+    total += LoadConvolution(weightsFile, layers[4], 128, 256, 3, total);
+    total += LoadConvolution(weightsFile, layers[5], 256, 512, 3, total);
+    total += LoadConvolution(weightsFile, layers[6], 512, 1024, 3, total);
+    total += LoadConvolution(weightsFile, layers[7], 1024, 256, 1, total);
+    total += LoadConvolution(weightsFile, layers[8], 256, 512, 3, total);
+    total += LoadConvolution(weightsFile, layers[9], 512, 255, 1, total, false);
+    total += LoadConvolution(weightsFile, layers[10], 256, 128, 1, total);
+    total += LoadConvolution(weightsFile, layers[11], 384, 256, 3, total);
+    total += LoadConvolution(weightsFile, layers[12], 256, 255, 1, total, false);
 
     model.Parameters() = parameters;
-    std::cout << "Total Weights: " << total << "\n";
+    std::cout << "Total Weights (excluding rolling means/variances): "
+              << total << "\n";
     weightsFile.close();
   }
 
@@ -861,10 +891,11 @@ class YOLOv3tiny {
   size_t predictionsPerCell;
   size_t numAttributes;
   std::vector<double> scale;
-  std::vector<size_t> layers;
 
   mlpack::DAGNetwork<mlpack::EmptyLoss, mlpack::RandomInitialization, MatType>
     model;
+
+  std::vector<size_t> layers;
 
   MatType parameters;
 };
@@ -876,9 +907,9 @@ int main(int argc, const char** argv) {
   const size_t imgChannels = 3;
   const size_t predictionsPerCell = 3;
   const size_t numBoxes = 13 * 13 * 3 + 26 * 26 * 3;
-  const double ignoreProb = 0.6;
-  const size_t borderSize = 1;
-  const double letterSize = 0.5;
+  const double ignoreProb = 0.5;
+  const size_t borderSize = 4;
+  const double letterSize = 1.0;
   const std::string lettersDir = "../data/labels";
   const std::string labelsFile = "../data/coco.names";
   const std::string weightsFile = "../weights/yolov3-tiny.weights";
@@ -896,28 +927,30 @@ int main(int argc, const char** argv) {
 
   Image image;
   Image input(imgSize, imgSize, imgChannels);
-  arma::mat detections;
+  arma::fmat detections;
 
   LoadImage(inputFile, image);
   LetterBox(image, input);
 
-  YOLOv3tiny model(imgSize, numClasses, predictionsPerCell, weightsFile);
+  YOLOv3tiny<arma::fmat> model
+    (imgSize, numClasses, predictionsPerCell, weightsFile);
+
   model.Training(false);
-  // model.Predict(input.data, detections);
-  //
-  // std::cout << "Model output shape: " << model.OutputDimensions() << "\n";
-  //
-  // DrawBoxes(detections,
-  //           numBoxes,
-  //           ignoreProb,
-  //           borderSize,
-  //           imgSize,
-  //           letterSize,
-  //           labels,
-  //           alphabet,
-  //           image);
-  //
-  // std::cout << "Saving to " << outputFile << ".\n";
-  // SaveImage(outputFile, image);
+  model.Predict(input.data, detections);
+
+  std::cout << "Model output shape: " << model.OutputDimensions() << "\n";
+
+  DrawBoxes(detections,
+            numBoxes,
+            ignoreProb,
+            borderSize,
+            imgSize,
+            letterSize,
+            labels,
+            alphabet,
+            image);
+
+  std::cout << "Saving to " << outputFile << ".\n";
+  SaveImage(outputFile, image);
   return 0;
 }
