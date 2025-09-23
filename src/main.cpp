@@ -19,28 +19,43 @@
 
 #include <mlpack.hpp>
 
-struct Image
+class Image
 {
+ public:
   Image() {}
 
   Image(const size_t width, const size_t height, const size_t channels)
   {
     info = mlpack::data::ImageInfo(width, height, channels);
-    data.set_size(width * height * channels, 1);
+    data = arma::fmat(width * height * channels, 1, arma::fill::zeros);
   }
 
-  Image(const arma::mat& data, const mlpack::data::ImageInfo& info) :
+  Image(const arma::fmat& data, const mlpack::data::ImageInfo& info) :
     data(data), info(info)
   {}
 
+  void SetPixel(int x, int y, int c, float val)
+  {
+    if (x < 0 && x >= info.Width()) return;
+    if (y < 0 && y >= info.Height()) return;
+    data.at(x + y * info.Width() + c * info.Width() * info.Height(), 0) = val;
+  }
+
+  float GetPixel(int x, int y, int c) const
+  {
+    assert(x >= 0 && x < info.Width());
+    assert(y >= 0 && y < info.Height());
+    return data.at(x + y * info.Width() + c * info.Width() * info.Height(), 0);
+  }
+
   mlpack::data::ImageInfo info;
-  arma::mat data;
+  arma::fmat data;
 };
 
 void CheckImage(const Image& image)
 {
-  const arma::mat data = image.data;
-  const mlpack::data::ImageInfo info = image.info;
+  const arma::fmat& data = image.data;
+  const mlpack::data::ImageInfo& info = image.info;
   size_t expectedRows = info.Width() * info.Height() * info.Channels();
   if (data.n_rows != expectedRows || data.n_cols != 1)
   {
