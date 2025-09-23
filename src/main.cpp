@@ -243,20 +243,18 @@ void EmbedImage(const Image& src, Image& dst, const size_t dx, const size_t dy)
  *  of resizing images to keep them within 416x416 but also keeping
  *  the aspect ratio of the original image, instead of simply resizing
  *  to 416x416.
- *
- *  XXX: The original model was trained on images whose blank
- *  space was filled with the rgb value (0.5, 0.5, 0.5). If inference
- *  is done with the same weights and other gray values, this will worsen
- *  the results of the network.
  */
-void LetterBox(const Image& src, Image& dst, const double grayValue = 0.5)
+void LetterBox(const Image& src, Image& dst)
 {
+  const double grayValue = 0.5;
   CheckImage(src);
+
   dst.data.clear();
-  dst.data = arma::mat(dst.info.Width() * dst.info.Height() * dst.info.Channels(), 1);
+  dst.data = arma::fmat(dst.info.Width() * dst.info.Height() * dst.info.Channels(), 1);
+  dst.data.fill(grayValue);
 
   size_t width, height;
-  if (dst.info.Width() / src.info.Width() > dst.info.Height() / src.info.Height())
+  if ((float)dst.info.Width() / src.info.Width() > (float)dst.info.Height() / src.info.Height())
   {
     height = dst.info.Height();
     width = src.info.Width() * dst.info.Height() / src.info.Height();
@@ -267,14 +265,10 @@ void LetterBox(const Image& src, Image& dst, const double grayValue = 0.5)
     height = src.info.Height() * dst.info.Width() / src.info.Width();
   }
 
-  dst.data.fill(grayValue);
-  arma::mat resizedSrc;
-  mlpack::data::ImageInfo resizedInfo(width, height, src.info.Channels());
-
-  Image resizedImage(resizedSrc, resizedInfo);
+  Image resizedImage(width, height, dst.info.Channels());
   ResizeImage(src, resizedImage);
-  EmbedImage(resizedImage, dst, (dst.info.Width() - width)/2,
-    (dst.info.Height() - height)/2);
+  EmbedImage(resizedImage, dst, (dst.info.Width() - width) / 2,
+    (dst.info.Height() - height) / 2);
 }
 
 class BoundingBox
