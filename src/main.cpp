@@ -276,7 +276,7 @@ class BoundingBox
  public:
   // Expects format: cx, cy, w, h
   BoundingBox(const double cx, const double cy, const double w, const double h,
-              const arma::mat& classProbs)
+              const size_t objectClass) : objectClass(objectClass)
   {
     x1 = cx - w / 2.0;
     x2 = cx + w / 2.0;
@@ -287,9 +287,6 @@ class BoundingBox
     red = 0.98;
     green = 0.90;
     blue = 0.15;
-
-    objectIndex = classProbs.index_max();
-    objectProb = classProbs.at(objectIndex);
   }
 
   void Draw(Image& image,
@@ -299,9 +296,10 @@ class BoundingBox
             const double letterSize)
   {
     const mlpack::data::ImageInfo& info = image.info;
+
     double x1 = std::clamp<double>(this->x1, 0, info.Width() - 1);
-    double x2 = std::clamp<double>(this->x2, 0, info.Width() - 1);
     double y1 = std::clamp<double>(this->y1, 0, info.Height() - 1);
+    double x2 = std::clamp<double>(this->x2, 0, info.Width() - 1);
     double y2 = std::clamp<double>(this->y2, 0, info.Height() - 1);
 
     if (x1 > x2 || y1 > y2)
@@ -313,23 +311,17 @@ class BoundingBox
       for (int x = x1; x <= x2; x++)
       {
         // Top
-        int yTop = y1 - b;
+        int yT = y1 + b;
         // Bottom
-        int yBot = y2 + b;
+        int yB = y2 - b;
 
-        int rTop = x + yTop * info.Width();
-        int gTop = x + yTop * info.Width() + info.Height() * info.Width();
-        int bTop = x + yTop * info.Width() + info.Height() * info.Width() * 2;
-        image.data(rTop, 0) = red;
-        image.data(gTop, 0) = green;
-        image.data(bTop, 0) = blue;
+        image.SetPixel(x, yT, 0, red);
+        image.SetPixel(x, yT, 1, green);
+        image.SetPixel(x, yT, 2, blue);
 
-        int rBot = x + yBot * info.Width();
-        int gBot = x + yBot * info.Width() + info.Height() * info.Width();
-        int bBot = x + yBot * info.Width() + info.Height() * info.Width() * 2;
-        image.data(rBot, 0) = red;
-        image.data(gBot, 0) = green;
-        image.data(bBot, 0) = blue;
+        image.SetPixel(x, yB, 0, red);
+        image.SetPixel(x, yB, 1, green);
+        image.SetPixel(x, yB, 2, blue);
       }
 
       for (int y = y1; y <= y2; y++)
@@ -339,23 +331,16 @@ class BoundingBox
         // Right
         int xR = x2 - b;
 
-        int rL = xL + y * info.Width();
-        int gL = xL + y * info.Width() + info.Height() * info.Width();
-        int bL = xL + y * info.Width() + info.Height() * info.Width() * 2;
-        image.data(rL, 0) = red;
-        image.data(gL, 0) = green;
-        image.data(bL, 0) = blue;
+        image.SetPixel(xL, y, 0, red);
+        image.SetPixel(xL, y, 1, green);
+        image.SetPixel(xL, y, 2, blue);
 
-        int rR = xR + y * info.Width();
-        int gR = xR + y * info.Width() + info.Height() * info.Width();
-        int bR = xR + y * info.Width() + info.Height() * info.Width() * 2;
-        image.data(rR, 0) = red;
-        image.data(gR, 0) = green;
-        image.data(bR, 0) = blue;
+        image.SetPixel(xR, y, 0, red);
+        image.SetPixel(xR, y, 1, green);
+        image.SetPixel(xR, y, 2, blue);
       }
     }
-    std::cout << labels[objectIndex] << ": " << objectProb * 100 << "%\n";
-    DrawLabel(image, labels[objectIndex], letterSize, alphabet);
+    DrawLabel(image, labels[objectClass], letterSize, alphabet);
   }
 
   void DrawLabel(Image& image,
@@ -363,14 +348,15 @@ class BoundingBox
                  const double size,
                  const std::unordered_map<char, Image>& alphabet)
   {
+    double x1 = std::clamp<double>(this->x1, 0, image.info.Width() - 1);
+    double y1 = std::clamp<double>(this->y1, 0, image.info.Height() - 1);
+
     double dx = x1;
     for (size_t i = 0; i < label.size(); i++)
     {
       char letter = label[i];
       Image letterImage = alphabet.at(letter);
-      Image resized;
-      resized.info = mlpack::data::ImageInfo(letterImage.info.Width() * size,
-        letterImage.info.Height() * size, 3);
+      Image resized(letterImage.info.Width() * size, letterImage.info.Height() * size, 3);
 
       ResizeImage(letterImage, resized);
       EmbedImage(resized, image, dx, y1);
@@ -388,12 +374,11 @@ class BoundingBox
   double red;
   double green;
   double blue;
-  size_t objectIndex;
-  double objectProb;
+  size_t objectClass;
 };
 
 /*
- * Draw boxes onto image, only if the boxes objectness score is > `maxProb`.
+ * Draw boxes onto image, only if the boxes objectness score is > `ignoreProb`.
  */
 void DrawBoxes(const arma::mat& modelOutput,
                const size_t numBoxes,
