@@ -73,6 +73,7 @@ void CheckImage(const Image& image)
 
 /*
  *  Loads an image, normalize it values and convert to mlpack layout.
+ *  TODO: fix pngs
  */
 void LoadImage(const std::string& file,
                Image& image,
@@ -98,7 +99,7 @@ void LoadImage(const std::string& file,
 void SaveImage(const std::string& file, Image& image)
 {
   CheckImage(image);
-  arma::mat stbData = mlpack::data::STBLayout(image.data, image.info);
+  arma::fmat stbData = mlpack::data::STBLayout(image.data, image.info);
   stbData *= 255;
   Save(file, stbData, image.info, true);
 }
@@ -158,48 +159,48 @@ std::unordered_map<char, Image> GetAlphabet(const std::string& dir)
  */
 void ResizeImage(const Image& input, Image& output)
 {
-  size_t newWidth = output.info.Width();
-  size_t newHeight = output.info.Height();
-
-  size_t width = input.info.Width();
-  size_t height = input.info.Height();
-
   CheckImage(input);
+  CheckImage(output);
+  assert(input.info.Channels() == output.info.Channels());
+  const size_t channels = input.info.Channels();
+  const size_t w = output.info.Width();
+  const size_t h = output.info.Height();
 
-  output.data.clear();
-  output.data = arma::mat(newWidth * newHeight * output.info.Channels(), 1);
+  Image part(output.info.Width(), input.info.Height(), channels);
+  float wScale = (float)(input.info.Width() - 1) / (w - 1);
+  float hScale = (float)(input.info.Height() - 1) / (h - 1);
 
-  double xRatio = (double)(width - 1) / (newWidth - 1);
-  double yRatio = (double)(height - 1) / (newHeight - 1);
+  for (size_t k = 0; k < channels; k++) {
+    for (size_t r = 0; r < input.info.Height(); r++) {
+      for (size_t c = 0; c < w; c++) {
+        float val = 0;
+        if (c == w - 1 || input.info.Width() == 1) {
+          val = input.GetPixel(input.info.Width() - 1, r, k);
+        } else {
+          float sx = c * wScale;
+          int ix = (int)sx;
+          float dx = sx - ix;
+          val = (1 - dx) * input.GetPixel(ix, r, k) +
+            dx * input.GetPixel(ix + 1, r, k);
+        }
+        part.SetPixel(c, r, k, val);
+      }
+    }
+  }
 
-  for (size_t channel = 0; channel < input.info.Channels(); channel++)
-  {
-    for (size_t w = 0; w < newWidth; w++)
-    {
-      for (size_t h = 0; h < newHeight; h++)
-      {
-        size_t xLow = std::floor(xRatio * w);
-        size_t yLow = std::floor(yRatio * h);
-
-        size_t xHigh = std::ceil(xRatio * w);
-        size_t yHigh = std::ceil(yRatio * h);
-
-        size_t xWeight = (xRatio * w) - xLow;
-        size_t yWeight = (yRatio * h) - yLow;
-
-        double a = input.data.at(xLow + yLow * width + channel * width * height);
-        double b = input.data.at(xLow + yHigh * width + channel * width * height);
-        double c = input.data.at(xHigh + yLow * width + channel * width * height);
-        double d = input.data.at(xHigh + yHigh * width + channel * width * height);
-
-        double value =
-                a * (1 - xWeight) * (1 - yWeight) +
-                b * xWeight * (1 - yWeight) +
-                c * yWeight * (1 - xWeight) +
-                d * xWeight * yWeight;
-
-        output.data.at(w + h * newWidth + channel * newWidth * newHeight) =
-          value;
+  for (int k = 0; k < channels; k++) {
+    for (int r = 0; r < h; r++) {
+      float sy = r * hScale;
+      int iy = (int)sy;
+      float dy = sy - iy;
+      for (int c = 0; c < w; c++) {
+        float val = (1 - dy) * part.GetPixel(c, iy, k);
+        output.SetPixel(c, r, k, val);
+      }
+      if (r == h - 1 || input.info.Height() == 1) continue;
+      for (int c = 0; c < w; c++) {
+        float val = dy * part.GetPixel(c, iy + 1, k);
+        output.SetPixel(c, r, k, output.GetPixel(c, r, k) + val);
       }
     }
   }
