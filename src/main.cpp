@@ -380,9 +380,9 @@ class BoundingBox
 /*
  * Draw boxes onto image, only if the boxes objectness score is > `ignoreProb`.
  */
-void DrawBoxes(const arma::mat& modelOutput,
+void DrawBoxes(const arma::fmat& modelOutput,
                const size_t numBoxes,
-               const double maxProb,
+               const double ignoreProb,
                const double borderSize,
                const size_t imgSize,
                const double letterSize,
@@ -414,10 +414,11 @@ void DrawBoxes(const arma::mat& modelOutput,
   const size_t predictionSize = modelOutput.n_rows / numBoxes;
   for (size_t box = 0; box < numBoxes; box++)
   {
-    arma::mat prediction;
+    arma::fmat prediction;
     mlpack::MakeAlias(prediction, modelOutput, predictionSize, 1,
       box * predictionSize);
-    if (prediction.at(4, 0) < maxProb)
+    float objectness = prediction.at(4, 0);
+    if (objectness < ignoreProb)
       continue;
 
     double x, y, w, h;
@@ -425,10 +426,15 @@ void DrawBoxes(const arma::mat& modelOutput,
     y = prediction.at(1, 0) * yRatio;
     w = prediction.at(2, 0) * xRatio;
     h = prediction.at(3, 0) * yRatio;
-    const arma::mat& classProbs =
+    const arma::fmat& classProbs =
       prediction.submat(5, 0, prediction.n_rows - 1, 0);
+    const size_t classIndex = classProbs.index_max();
+    const float objectProb = objectness * classProbs.at(classIndex);
 
-    BoundingBox bbox(x, y, w, h, classProbs);
+    if (objectProb < ignoreProb)
+      continue;
+    std::cout << labels[classIndex] << ": " << roundf(objectProb * 100) << "%\n";
+    BoundingBox bbox(x, y, w, h, classIndex);
     bbox.Draw(image, borderSize, labels, alphabet, letterSize);
   }
 }
