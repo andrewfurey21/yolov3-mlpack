@@ -156,6 +156,10 @@ std::unordered_map<char, Image> GetAlphabet(const std::string& dir)
 
 /*
  *  Resizes an image using `resizedInfo`.
+ *
+ *  XXX: This is the same resizing used as darknet. If you load
+ *  in the pretrained weights and use a different resizing method
+ *  you will get worse results.
  */
 void ResizeImage(const Image& input, Image& output)
 {
@@ -170,13 +174,19 @@ void ResizeImage(const Image& input, Image& output)
   float wScale = (float)(input.info.Width() - 1) / (w - 1);
   float hScale = (float)(input.info.Height() - 1) / (h - 1);
 
-  for (size_t k = 0; k < channels; k++) {
-    for (size_t r = 0; r < input.info.Height(); r++) {
-      for (size_t c = 0; c < w; c++) {
+  for (size_t k = 0; k < channels; k++)
+  {
+    for (size_t r = 0; r < input.info.Height(); r++)
+    {
+      for (size_t c = 0; c < w; c++)
+      {
         float val = 0;
-        if (c == w - 1 || input.info.Width() == 1) {
+        if (c == w - 1 || input.info.Width() == 1)
+        {
           val = input.GetPixel(input.info.Width() - 1, r, k);
-        } else {
+        }
+        else
+        {
           float sx = c * wScale;
           int ix = (int)sx;
           float dx = sx - ix;
@@ -188,17 +198,24 @@ void ResizeImage(const Image& input, Image& output)
     }
   }
 
-  for (int k = 0; k < channels; k++) {
-    for (int r = 0; r < h; r++) {
+  for (int k = 0; k < channels; k++)
+  {
+    for (int r = 0; r < h; r++)
+    {
       float sy = r * hScale;
       int iy = (int)sy;
       float dy = sy - iy;
-      for (int c = 0; c < w; c++) {
+      for (int c = 0; c < w; c++)
+      {
         float val = (1 - dy) * part.GetPixel(c, iy, k);
         output.SetPixel(c, r, k, val);
       }
-      if (r == h - 1 || input.info.Height() == 1) continue;
-      for (int c = 0; c < w; c++) {
+
+      if (r == h - 1 || input.info.Height() == 1)
+        continue;
+
+      for (int c = 0; c < w; c++)
+      {
         float val = dy * part.GetPixel(c, iy + 1, k);
         output.SetPixel(c, r, k, output.GetPixel(c, r, k) + val);
       }
