@@ -83,7 +83,7 @@ void LoadImage(const std::string& file,
     image.info.Channels() = 1;
   Load(file, image.data, image.info, true);
   image.data /= 255.0f;
-  image.data = mlpack::data::ImageLayout(image.data, image.info);
+  image.data = mlpack::data::GroupChannels(image.data, image.info);
 
   // Hack so that other image processing functions work.
   if (grayscale)
@@ -99,7 +99,7 @@ void LoadImage(const std::string& file,
 void SaveImage(const std::string& file, Image& image)
 {
   CheckImage(image);
-  arma::fmat stbData = mlpack::data::STBLayout(image.data, image.info);
+  arma::fmat stbData = mlpack::data::InterleaveChannels(image.data, image.info);
   stbData *= 255;
   Save(file, stbData, image.info, true);
 }
@@ -542,48 +542,75 @@ class YOLOv3Layer : public mlpack::Layer<MatType>
     mlpack::MakeAlias(reshapedCube, output, numAttributes,
       predictionsPerCell * grid, batchSize);
 
-    MatType offset = arma::regspace<MatType>(0, this->inputDimensions[0] - 1);
-    CubeType xOffset = arma::repcube(offset, this->inputDimensions[0],
-      predictionsPerCell, batchSize);
-    CubeType yOffset = arma::repcube(arma::vectorise(arma::repmat(offset.t(),
-      this->inputDimensions[0], 1)), 1, predictionsPerCell, batchSize);
-
     const size_t cols = predictionsPerCell - 1;
-    // TODO: just do activation, and have post processing function. makes training faster
-    // x
-    outputCube.tube(0, 0, grid - 1, cols) =
-      (xOffset + 1 / (1 + arma::exp(-inputCube.tube(0, 0, grid - 1, cols))))
-      * stride;
-
-    // y
-    outputCube.tube(grid, 0, grid * 2 - 1, cols) =
-      (yOffset + 1 / (1 + arma::exp(-inputCube.tube(grid, 0, grid * 2 - 1, cols))
-      )) * stride;
-
-    // w
-    outputCube.tube(grid * 2, 0, grid * 3 - 1, cols) =
-      arma::repcube(w, 1, 1, batchSize) %
-      arma::exp(inputCube.tube(grid * 2, 0, grid * 3 - 1, cols));
-
-    // h
-    outputCube.tube(grid * 3, 0, grid * 4 - 1, cols) =
-      arma::repcube(h, 1, 1, batchSize) %
-      arma::exp(inputCube.tube(grid * 3, 0, grid * 4 - 1, cols));
-
-    // apply logistic sigmoid to objectness and classification logits.
-    outputCube.tube(grid * 4, 0, outputCube.n_rows - 1, cols) =
-      1. / (1. + arma::exp(-inputCube.tube(grid * 4, 0, inputCube.n_rows - 1, cols)));
-
-    // Reshape, for each batch item.
-    for (size_t i = 0; i < reshapedCube.n_slices; i++)
+    if (this->training)
     {
-      reshapedCube.slice(i) =
-        arma::reshape(
+      // x
+      outputCube.tube(0, 0, grid - 1, cols) =
+        1. / (1. + arma::exp(-inputCube.tube(0, 0, grid - 1, cols)));
+
+      // y
+      outputCube.tube(grid, 0, grid * 2 - 1, cols) =
+        1. / (1. + arma::exp(-inputCube.tube(grid, 0, grid * 2 - 1, cols)));
+
+      // apply logistic sigmoid to objectness and classification logits.
+      outputCube.tube(grid * 4, 0, outputCube.n_rows - 1, cols) =
+        1. / (1. + arma::exp(-inputCube.tube(grid * 4, 0, inputCube.n_rows - 1, cols)));
+
+      // Reshape, for each batch item.
+      for (size_t i = 0; i < reshapedCube.n_slices; i++)
+      {
+        reshapedCube.slice(i) =
           arma::reshape(
-            outputCube.slice(i), grid, numAttributes * predictionsPerCell
-          ).t(),
-          numAttributes, predictionsPerCell * grid
-        );
+            arma::reshape(
+              outputCube.slice(i), grid, numAttributes * predictionsPerCell
+            ).t(),
+            numAttributes, predictionsPerCell * grid
+          );
+      }
+    }
+    else
+    {
+      MatType offset = arma::regspace<MatType>(0, this->inputDimensions[0] - 1);
+      CubeType xOffset = arma::repcube(offset, this->inputDimensions[0],
+        predictionsPerCell, batchSize);
+      CubeType yOffset = arma::repcube(arma::vectorise(arma::repmat(offset.t(),
+        this->inputDimensions[0], 1)), 1, predictionsPerCell, batchSize);
+      // x
+      outputCube.tube(0, 0, grid - 1, cols) =
+        (xOffset + 1 / (1 + arma::exp(-inputCube.tube(0, 0, grid - 1, cols))))
+        * stride;
+
+      // y
+      outputCube.tube(grid, 0, grid * 2 - 1, cols) =
+        (yOffset + 1 / (1 + arma::exp(-inputCube.tube(grid, 0, grid * 2 - 1, cols))
+        )) * stride;
+
+      // w
+      outputCube.tube(grid * 2, 0, grid * 3 - 1, cols) =
+        arma::repcube(w, 1, 1, batchSize) %
+        arma::exp(inputCube.tube(grid * 2, 0, grid * 3 - 1, cols));
+
+      // h
+      outputCube.tube(grid * 3, 0, grid * 4 - 1, cols) =
+        arma::repcube(h, 1, 1, batchSize) %
+        arma::exp(inputCube.tube(grid * 3, 0, grid * 4 - 1, cols));
+
+      // apply logistic sigmoid to objectness and classification logits.
+      outputCube.tube(grid * 4, 0, outputCube.n_rows - 1, cols) =
+        1. / (1. + arma::exp(-inputCube.tube(grid * 4, 0, inputCube.n_rows - 1, cols)));
+
+      // Reshape, for each batch item.
+      for (size_t i = 0; i < reshapedCube.n_slices; i++)
+      {
+        reshapedCube.slice(i) =
+          arma::reshape(
+            arma::reshape(
+              outputCube.slice(i), grid, numAttributes * predictionsPerCell
+            ).t(),
+            numAttributes, predictionsPerCell * grid
+          );
+      }
     }
   }
 
@@ -704,11 +731,11 @@ class YOLOv3tiny {
     // Concat convolution8 + upsample18 => convolution19
     model.Connect(upsample18, convolution19);
     model.Connect(convolution8, convolution19);
-    // Set axis not necessary, since default is channels.
+    // Set axis not necessary, since default is concat along channels.
 
     model.Connect(convolution19, convolution20);
     model.Connect(convolution20, detections21);
-    // Again, set axis not necessary, since default is channels.
+    // Again, set axis not necessary, since default is concat along channels.
 
     // Concatenation order shouldn't matter.
     model.Connect(detections16, concatLayer22);
@@ -926,7 +953,7 @@ int main(int argc, const char** argv) {
   const size_t numBoxes = 13 * 13 * 3 + 26 * 26 * 3;
   const double ignoreProb = 0.5;
   const size_t borderSize = 4;
-  const double letterSize = 1.0;
+  const double letterSize = 1.5;
   const std::string lettersDir = "../data/labels";
   const std::string labelsFile = "../data/coco.names";
   const std::string weightsFile = "../weights/yolov3-tiny.weights";
