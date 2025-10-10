@@ -17,6 +17,7 @@
  *
  */
 
+// #define MLPACK_ANN_IGNORE_SERIALIZATION_WARNING
 #include <mlpack.hpp>
 
 class Image
@@ -160,6 +161,8 @@ std::unordered_map<char, Image> GetAlphabet(const std::string& dir)
  *  XXX: This is the same resizing used as darknet. If you load
  *  in the pretrained weights and use a different resizing method
  *  you will get worse results.
+ *
+ *  TODO: try mlpack resize
  */
 void ResizeImage(const Image& input, Image& output)
 {
@@ -469,6 +472,7 @@ template <typename MatType = arma::fmat>
 class YOLOv3Layer : public mlpack::Layer<MatType>
 {
  public:
+  YOLOv3Layer() {}
   YOLOv3Layer(size_t imgSize,
               size_t numAttributes,
               size_t gridSize,
@@ -543,74 +547,45 @@ class YOLOv3Layer : public mlpack::Layer<MatType>
       predictionsPerCell * grid, batchSize);
 
     const size_t cols = predictionsPerCell - 1;
-    if (this->training)
+    MatType offset = arma::regspace<MatType>(0, this->inputDimensions[0] - 1);
+    CubeType xOffset = arma::repcube(offset, this->inputDimensions[0],
+      predictionsPerCell, batchSize);
+    CubeType yOffset = arma::repcube(arma::vectorise(arma::repmat(offset.t(),
+      this->inputDimensions[0], 1)), 1, predictionsPerCell, batchSize);
+    // x
+    outputCube.tube(0, 0, grid - 1, cols) =
+      (xOffset + 1 / (1 + arma::exp(-inputCube.tube(0, 0, grid - 1, cols))))
+      * stride;
+
+    // y
+    outputCube.tube(grid, 0, grid * 2 - 1, cols) =
+      (yOffset + 1 / (1 + arma::exp(-inputCube.tube(grid, 0, grid * 2 - 1, cols))
+      )) * stride;
+
+    // w
+    outputCube.tube(grid * 2, 0, grid * 3 - 1, cols) =
+      arma::repcube(w, 1, 1, batchSize) %
+      arma::exp(inputCube.tube(grid * 2, 0, grid * 3 - 1, cols));
+
+    // h
+    outputCube.tube(grid * 3, 0, grid * 4 - 1, cols) =
+      arma::repcube(h, 1, 1, batchSize) %
+      arma::exp(inputCube.tube(grid * 3, 0, grid * 4 - 1, cols));
+
+    // apply logistic sigmoid to objectness and classification logits.
+    outputCube.tube(grid * 4, 0, outputCube.n_rows - 1, cols) =
+      1. / (1. + arma::exp(-inputCube.tube(grid * 4, 0, inputCube.n_rows - 1, cols)));
+
+    // Reshape, for each batch item.
+    for (size_t i = 0; i < reshapedCube.n_slices; i++)
     {
-      // x
-      outputCube.tube(0, 0, grid - 1, cols) =
-        1. / (1. + arma::exp(-inputCube.tube(0, 0, grid - 1, cols)));
-
-      // y
-      outputCube.tube(grid, 0, grid * 2 - 1, cols) =
-        1. / (1. + arma::exp(-inputCube.tube(grid, 0, grid * 2 - 1, cols)));
-
-      // apply logistic sigmoid to objectness and classification logits.
-      outputCube.tube(grid * 4, 0, outputCube.n_rows - 1, cols) =
-        1. / (1. + arma::exp(-inputCube.tube(grid * 4, 0, inputCube.n_rows - 1, cols)));
-
-      // Reshape, for each batch item.
-      for (size_t i = 0; i < reshapedCube.n_slices; i++)
-      {
-        reshapedCube.slice(i) =
+      reshapedCube.slice(i) =
+        arma::reshape(
           arma::reshape(
-            arma::reshape(
-              outputCube.slice(i), grid, numAttributes * predictionsPerCell
-            ).t(),
-            numAttributes, predictionsPerCell * grid
-          );
-      }
-    }
-    else
-    {
-      MatType offset = arma::regspace<MatType>(0, this->inputDimensions[0] - 1);
-      CubeType xOffset = arma::repcube(offset, this->inputDimensions[0],
-        predictionsPerCell, batchSize);
-      CubeType yOffset = arma::repcube(arma::vectorise(arma::repmat(offset.t(),
-        this->inputDimensions[0], 1)), 1, predictionsPerCell, batchSize);
-      // x
-      outputCube.tube(0, 0, grid - 1, cols) =
-        (xOffset + 1 / (1 + arma::exp(-inputCube.tube(0, 0, grid - 1, cols))))
-        * stride;
-
-      // y
-      outputCube.tube(grid, 0, grid * 2 - 1, cols) =
-        (yOffset + 1 / (1 + arma::exp(-inputCube.tube(grid, 0, grid * 2 - 1, cols))
-        )) * stride;
-
-      // w
-      outputCube.tube(grid * 2, 0, grid * 3 - 1, cols) =
-        arma::repcube(w, 1, 1, batchSize) %
-        arma::exp(inputCube.tube(grid * 2, 0, grid * 3 - 1, cols));
-
-      // h
-      outputCube.tube(grid * 3, 0, grid * 4 - 1, cols) =
-        arma::repcube(h, 1, 1, batchSize) %
-        arma::exp(inputCube.tube(grid * 3, 0, grid * 4 - 1, cols));
-
-      // apply logistic sigmoid to objectness and classification logits.
-      outputCube.tube(grid * 4, 0, outputCube.n_rows - 1, cols) =
-        1. / (1. + arma::exp(-inputCube.tube(grid * 4, 0, inputCube.n_rows - 1, cols)));
-
-      // Reshape, for each batch item.
-      for (size_t i = 0; i < reshapedCube.n_slices; i++)
-      {
-        reshapedCube.slice(i) =
-          arma::reshape(
-            arma::reshape(
-              outputCube.slice(i), grid, numAttributes * predictionsPerCell
-            ).t(),
-            numAttributes, predictionsPerCell * grid
-          );
-      }
+            outputCube.slice(i), grid, numAttributes * predictionsPerCell
+          ).t(),
+          numAttributes, predictionsPerCell * grid
+        );
     }
   }
 
@@ -618,6 +593,19 @@ class YOLOv3Layer : public mlpack::Layer<MatType>
     const MatType& gy, MatType& g) override
   {
     throw std::runtime_error("YOLOv3tiny::Backward() not implemented.");
+  }
+
+  template<typename Archive>
+  void serialize(Archive& ar, const uint32_t /* version */)
+  {
+    ar(cereal::base_class<mlpack::Layer<MatType>>(this));
+    ar(CEREAL_NVP(imgSize));
+    ar(CEREAL_NVP(numAttributes));
+    ar(CEREAL_NVP(gridSize));
+    ar(CEREAL_NVP(grid));
+    ar(CEREAL_NVP(w));
+    ar(CEREAL_NVP(h));
+    ar(CEREAL_NVP(predictionsPerCell));
   }
 
  private:
@@ -636,6 +624,17 @@ class YOLOv3Layer : public mlpack::Layer<MatType>
   size_t predictionsPerCell;
 };
 
+// CEREAL_REGISTER_TYPE(mlpack::Layer<arma::fmat>)
+// CEREAL_REGISTER_TYPE(mlpack::Identity<arma::fmat>)
+// CEREAL_REGISTER_TYPE(mlpack::MultiLayer<arma::fmat>)
+// CEREAL_REGISTER_TYPE(mlpack::Convolution<arma::fmat>)
+// CEREAL_REGISTER_TYPE(mlpack::BatchNorm<arma::fmat>)
+// CEREAL_REGISTER_TYPE(mlpack::LeakyReLU<arma::fmat>)
+// CEREAL_REGISTER_TYPE(mlpack::Padding<arma::fmat>)
+// CEREAL_REGISTER_TYPE(mlpack::MaxPooling<arma::fmat>)
+// CEREAL_REGISTER_TYPE(mlpack::NearestInterpolation<arma::fmat>)
+// CEREAL_REGISTER_TYPE(YOLOv3Layer<arma::fmat>)
+
 template <typename MatType = arma::fmat>
 class YOLOv3tiny {
  public:
@@ -649,12 +648,7 @@ class YOLOv3tiny {
     numAttributes = 5 + classes;
     scale = { 2.0, 2.0 };
 
-    model = mlpack::DAGNetwork<
-      mlpack::EmptyLoss,
-      mlpack::RandomInitialization,
-      MatType
-    >();
-
+    model = Model();
     model.InputDimensions() = { imgSize, imgSize, 3 };
 
     size_t convolution0 = Convolution(16, 3);
@@ -742,9 +736,14 @@ class YOLOv3tiny {
     model.Connect(detections21, concatLayer22);
 
     model.Reset();
-
     LoadWeights(weightsFile);
   }
+
+  ~YOLOv3tiny() {}
+
+  using Model =
+    mlpack::DAGNetwork<mlpack::EmptyLoss,
+      mlpack::RandomInitialization, MatType>;
 
   void Training(const bool training)
   {
@@ -788,7 +787,7 @@ class YOLOv3tiny {
     size_t pad = kernel == 3 ? 1 : 0;
     mlpack::MultiLayer<MatType> block;
     block.template Add<mlpack::Convolution<MatType>>(
-      maps, kernel,kernel, 1, 1, pad, pad, "none", !batchNorm);
+      maps, kernel, kernel, 1, 1, pad, pad, "none", !batchNorm);
 
     if (batchNorm)
     {
@@ -935,12 +934,8 @@ class YOLOv3tiny {
   size_t predictionsPerCell;
   size_t numAttributes;
   std::vector<double> scale;
-
-  mlpack::DAGNetwork<mlpack::EmptyLoss, mlpack::RandomInitialization, MatType>
-    model;
-
+  Model model;
   std::vector<size_t> layers;
-
   MatType parameters;
 };
 
