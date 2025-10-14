@@ -684,22 +684,6 @@ class YOLOv3tiny {
     // the Identity layer for pure concatentation, and no other compute.
     size_t concatLayer22 = model.template Add<mlpack::Identity<MatType>>();
 
-    layers = {
-      convolution0,
-      convolution2,
-      convolution4,
-      convolution6,
-      convolution8,
-      convolution10,
-      convolution12,
-      convolution13,
-      convolution14,
-      convolution15,
-      convolution17,
-      convolution19,
-      convolution20
-    };
-
     model.Connect(convolution0, maxPool1);
     model.Connect(maxPool1, convolution2);
     model.Connect(convolution2, maxPool3);
@@ -789,13 +773,14 @@ class YOLOv3tiny {
     block.template Add<mlpack::Convolution<MatType>>(
       maps, kernel, kernel, 1, 1, pad, pad, "none", !batchNorm);
 
+    // set epsilon to zero, couldn't find it used in darknet/ggml versions.
     if (batchNorm)
-    {
-      // set epsilon to zero, couldn't find it used in darknet/ggml versions.
       block.template Add<mlpack::BatchNorm<MatType>>(2, 2, 0, false);
-    }
+
     block.template Add<mlpack::LeakyReLU<MatType>>(reluSlope);
-    return model.Add(block);
+    size_t layer = model.Add(block);
+    layers.push_back(layer);
+    return layer;
   }
 
   size_t MaxPool2x2(const size_t stride)

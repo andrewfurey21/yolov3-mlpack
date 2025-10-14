@@ -20,7 +20,6 @@
 
 // #define MLPACK_ANN_IGNORE_SERIALIZATION_WARNING
 #include <mlpack.hpp>
-#include <mlpack/methods/ann/layer/identity.hpp>
 
 class Image
 {
@@ -441,8 +440,10 @@ void DrawBoxes(const arma::fmat& modelOutput,
       box * predictionSize);
     float objectness = prediction.at(4, 0);
     if (objectness < ignoreProb)
+    {
+      // std::cout << objectness << ", ";
       continue;
-
+    }
     double x, y, w, h;
     x = prediction.at(0, 0) * xRatio;
     y = prediction.at(1, 0) * yRatio;
@@ -454,7 +455,10 @@ void DrawBoxes(const arma::fmat& modelOutput,
     const float objectProb = objectness * classProbs.at(classIndex);
 
     if (objectProb < ignoreProb)
+    {
+      // std::cout << objectProb << ", ";
       continue;
+    }
     std::cout << labels[classIndex] << ": " << roundf(objectProb * 100) << "%\n";
     BoundingBox bbox(x, y, w, h, classIndex);
     bbox.Draw(image, borderSize, labels, alphabet, letterSize);
@@ -526,8 +530,6 @@ class YOLOv3Layer : public mlpack::Layer<MatType>
 
     if (grid != this->inputDimensions[0] * this->inputDimensions[1])
     {
-      std::cout << grid << "\n";
-      std::cout << this->inputDimensions[0] << " * " << this->inputDimensions[1] << " = " << this->inputDimensions[0] * this->inputDimensions[1] << "\n" << std::flush;
       throw std::logic_error("YOLOv3Layer::ComputeOutputDimensions(): "
         "Grid is the wrong size.");
     }
@@ -646,10 +648,11 @@ template <typename MatType = arma::fmat>
 class YOLOv3 {
  public:
   YOLOv3(size_t imgSize, size_t classes, size_t predictionsPerCell,
-             const std::string& weightsFile) :
+             const std::string& weightsFile, bool spp = false) :
     imgSize(imgSize),
     classes(classes),
-    predictionsPerCell(predictionsPerCell)
+    predictionsPerCell(predictionsPerCell),
+    spp(spp)
   {
     // x, y, w, h, objectness score, n classes (e.g. COCO = 80)
     numAttributes = 5 + classes;
@@ -660,7 +663,7 @@ class YOLOv3 {
 
     size_t convolution0 = Convolution(32, 3);
 
-    size_t layer4 = Downsample(convolution0, 64);
+    size_t layer4 = Downsample(convolution0, 64, 1);
     size_t layer11 = Downsample(layer4, 128, 2);
     size_t layer36 = Downsample(layer11, 256, 8);
     size_t layer61 = Downsample(layer36, 512, 8);
@@ -669,18 +672,40 @@ class YOLOv3 {
     size_t layer75 = Convolution(512, 1);
     size_t layer76 = Convolution(1024, 3);
     size_t layer77 = Convolution(512, 1);
+
+    size_t layer1 = MaxPool(13);
+    size_t layer2 = MaxPool(9);
+    size_t layer3 = MaxPool(5);
+    size_t sppConvolution = Convolution(512, 1);
+
     size_t layer78 = Convolution(1024, 3);
     size_t layer79 = Convolution(512, 1);
     size_t layer80 = Convolution(1024, 3);
     size_t layer81 = Convolution(255, 1, 1, false); // coco
-    size_t detection0 = YOLO(imgSize, 19, {116, 90, 156, 198, 373, 326}); // 608
+    // size_t detection0 = YOLO(imgSize, 19, {116, 90, 156, 198, 373, 326}); // 608
     // size_t detection0 = YOLO(imgSize, 13, {116, 90, 156, 198, 373, 326}); // 416
-    // size_t detection0 = YOLO(imgSize, 10, {116, 90, 156, 198, 373, 326}); // 320
+    size_t detection0 = YOLO(imgSize, 10, {116, 90, 156, 198, 373, 326}); // 320
 
     model.Connect(layer74, layer75);
     model.Connect(layer75, layer76);
     model.Connect(layer76, layer77);
-    model.Connect(layer77, layer78);
+
+    // if (!spp)
+    //   model.Connect(layer77, layer78);
+
+    model.Connect(layer77, layer1);
+    model.Connect(layer77, layer2);
+    model.Connect(layer77, layer3);
+    model.Connect(layer1, sppConvolution);
+    model.Connect(layer2, sppConvolution);
+    model.Connect(layer3, sppConvolution);
+    model.Connect(layer77, sppConvolution);
+
+    std::cout << "Order: " << layer1 << ", " << layer2 << ", " << layer3 << ", " << layer77 << "\n";
+    model.Connect(sppConvolution, layer78);
+
+    //
+
     model.Connect(layer78, layer79);
     model.Connect(layer79, layer80);
     model.Connect(layer80, layer81);
@@ -698,9 +723,9 @@ class YOLOv3 {
     size_t layer88 = Convolution(256, 1);
     size_t layer89 = Convolution(512, 3);
     size_t layer90 = Convolution(255, 1, 1, false); // coco
-    size_t detection1 = YOLO(imgSize, 38, {30, 61, 62, 45, 59, 119}); // 608
+    // size_t detection1 = YOLO(imgSize, 38, {30, 61, 62, 45, 59, 119}); // 608
     // size_t detection1 = YOLO(imgSize, 26, {30, 61, 62, 45, 59, 119}); // 416
-    // size_t detection1 = YOLO(imgSize, 20, {30, 61, 62, 45, 59, 119}); // 320
+    size_t detection1 = YOLO(imgSize, 20, {30, 61, 62, 45, 59, 119}); // 320
 
     // Concat
     model.Connect(upsample82, layer84);
@@ -718,7 +743,7 @@ class YOLOv3 {
     size_t upsample91 = model.template Add<mlpack::NearestInterpolation<MatType>>(scale);
     model.Connect(layer88, layer91);
     model.Connect(layer91, upsample91);
-  
+
     size_t layer93 = Convolution(128, 1);
     size_t layer94 = Convolution(256, 3);
     size_t layer95 = Convolution(128, 1);
@@ -726,9 +751,9 @@ class YOLOv3 {
     size_t layer97 = Convolution(128, 1);
     size_t layer98 = Convolution(256, 3);
     size_t layer99 = Convolution(255, 1, 1, false); // coco
-    size_t detection2 = YOLO(imgSize, 76, {10, 13, 16, 30, 33, 23}); // 608
+    // size_t detection2 = YOLO(imgSize, 76, {10, 13, 16, 30, 33, 23}); // 608
     // size_t detection2 = YOLO(imgSize, 52, {10, 13, 16, 30, 33, 23}); // 416
-    // size_t detection2 = YOLO(imgSize, 40, {10, 13, 16, 30, 33, 23}); // 320
+    size_t detection2 = YOLO(imgSize, 40, {10, 13, 16, 30, 33, 23}); // 320
 
     // Concat
     model.Connect(upsample91, layer93);
@@ -742,6 +767,15 @@ class YOLOv3 {
     model.Connect(layer98, layer99);
     model.Connect(layer99, detection2);
 
+    // do spp logic here, because loading darknet weights would be annoying
+    // move when using cereal
+    // if (spp)
+    // {
+    //   size_t sppConvolution = Convolution(512, 1);
+    //   SpatialPyramidPooling(layer77, sppConvolution);
+    //   model.Connect(sppConvolution, layer78);
+    // }
+
     // Concat outputs.
     size_t lastLayer = model.template Add<mlpack::Identity>();
     model.Connect(detection0, lastLayer);
@@ -749,6 +783,8 @@ class YOLOv3 {
     model.Connect(detection2, lastLayer);
 
     model.Reset();
+
+    std::cout << "Weight size: " << model.WeightSize() << "\n";
     LoadWeights(weightsFile);
   }
 
@@ -813,6 +849,32 @@ class YOLOv3 {
     return previous;
   }
 
+  size_t MaxPool(const size_t kernel)
+  {
+    const size_t pad = kernel / 2;
+    mlpack::MultiLayer<MatType> block;
+    Type min = -arma::datum::inf;
+    block.template Add<mlpack::Padding<MatType>>(pad, pad, pad, pad, min);
+    block.template Add<mlpack::MaxPooling<MatType>>(kernel, kernel, 1, 1);
+    return model.Add(block);
+  }
+
+  void SpatialPyramidPooling(const size_t input, const size_t output)
+  {
+    size_t layer1 = MaxPool(5);
+    size_t layer2 = MaxPool(9);
+    size_t layer3 = MaxPool(13);
+
+    model.Connect(input, layer1);
+    model.Connect(input, layer2);
+    model.Connect(input, layer3);
+
+    model.Connect(layer1, output);
+    model.Connect(layer2, output);
+    model.Connect(layer3, output);
+    model.Connect(input, output);
+  }
+
   size_t Convolution(const size_t maps, const size_t kernel, const size_t stride = 1,
     const bool batchNorm = true, const Type reluSlope = 0.1)
   {
@@ -849,8 +911,7 @@ class YOLOv3 {
   }
 
   using CubeType = typename GetCubeType<MatType>::type;
-  // Kind of naive implementation, could probably be improved, maybe use
-  // armadillo instead of std::vector for loading.
+
   size_t LoadConvolution(std::ifstream& f,
                          const size_t layer,
                          const size_t inChannels,
@@ -884,6 +945,15 @@ class YOLOv3 {
     mlpack::MultiLayer<MatType>* layerPtr =
       static_cast<mlpack::MultiLayer<MatType>*>(model.Network()[layer]);
 
+    if (layerPtr->WeightSize() != total)
+    {
+      std::ostringstream errMessage;
+      errMessage << "Layer weight size ( " << layerPtr->WeightSize()
+                 <<  " ) is not the same as total weight size ( "
+                 << total << " ).";
+      throw std::logic_error(errMessage.str());
+    }
+
     std::vector<float> totalWeights;
     totalWeights.reserve(total);
     if(batchNorm)
@@ -904,15 +974,6 @@ class YOLOv3 {
       totalWeights.insert(totalWeights.end(), biases.begin(), biases.end());
     }
 
-    if (layerPtr->WeightSize() != total)
-    {
-      std::ostringstream errMessage;
-      errMessage << "Layer weight size ( " << layerPtr->WeightSize()
-                 <<  " ) is not the same as total weight size ( "
-                 << total << " ).";
-      throw std::logic_error(errMessage.str());
-    }
-
     layerParams = MatType(totalWeights);
     return total;
   }
@@ -920,8 +981,8 @@ class YOLOv3 {
   /*
    * Load weights from the darknet .weights format.
    *
-   * XXX: Only works for yolov3-tiny config, from
-   * https://github.com/pjreddie/darknet/blob/master/cfg/yolov3-tiny.cfg
+   * XXX: Only works for yolov3 config, from
+   * https://github.com/pjreddie/darknet/blob/master/cfg/yolov3.cfg
    *
    */
   void LoadWeights(const std::string& file)
@@ -936,7 +997,10 @@ class YOLOv3 {
     // Skip header.
     weightsFile.seekg(20, std::ios::cur);
 
-    assert(layers.size() == 75);
+    if (this->spp)
+      assert(layers.size() == 76);
+    else
+      assert(layers.size() == 75);
 
     size_t total = 0;
     total += LoadConvolution(weightsFile, layers[0], 3, 32, 3, total);
@@ -1001,28 +1065,59 @@ class YOLOv3 {
     total += LoadConvolution(weightsFile, layers[52], 1024, 512, 1, total);
     total += LoadConvolution(weightsFile, layers[53], 512, 1024, 3, total);
     total += LoadConvolution(weightsFile, layers[54], 1024, 512, 1, total);
-    total += LoadConvolution(weightsFile, layers[55], 512, 1024, 3, total);
-    total += LoadConvolution(weightsFile, layers[56], 1024, 512, 1, total);
-    total += LoadConvolution(weightsFile, layers[57], 512, 1024, 3, total);
-    total += LoadConvolution(weightsFile, layers[58], 1024, 255, 1, total, false); // coco
 
-    total += LoadConvolution(weightsFile, layers[59], 512, 256, 1, total);
-    total += LoadConvolution(weightsFile, layers[60], 768, 256, 1, total);
-    total += LoadConvolution(weightsFile, layers[61], 256, 512, 3, total);
-    total += LoadConvolution(weightsFile, layers[62], 512, 256, 1, total);
-    total += LoadConvolution(weightsFile, layers[63], 256, 512, 3, total);
-    total += LoadConvolution(weightsFile, layers[64], 512, 256, 1, total);
-    total += LoadConvolution(weightsFile, layers[65], 256, 512, 3, total);
-    total += LoadConvolution(weightsFile, layers[66], 512, 255, 1, total, false); // coco
+    // if (spp)
+    // {
+    //   std::cout << "Layer: " << layers[75] << "\n";
+    // }
 
-    total += LoadConvolution(weightsFile, layers[67], 256, 128, 1, total);
-    total += LoadConvolution(weightsFile, layers[68], 384, 128, 1, total);
-    total += LoadConvolution(weightsFile, layers[69], 128, 256, 3, total);
-    total += LoadConvolution(weightsFile, layers[70], 256, 128, 1, total);
-    total += LoadConvolution(weightsFile, layers[71], 128, 256, 3, total);
-    total += LoadConvolution(weightsFile, layers[72], 256, 128, 1, total);
-    total += LoadConvolution(weightsFile, layers[73], 128, 256, 3, total);
-    total += LoadConvolution(weightsFile, layers[74], 256, 255, 1, total, false); // coco
+    // total += LoadConvolution(weightsFile, layers[55], 512, 1024, 3, total);
+    // total += LoadConvolution(weightsFile, layers[56], 1024, 512, 1, total);
+    // total += LoadConvolution(weightsFile, layers[57], 512, 1024, 3, total);
+    // total += LoadConvolution(weightsFile, layers[58], 1024, 255, 1, total, false); // coco
+    //
+    // total += LoadConvolution(weightsFile, layers[59], 512, 256, 1, total);
+    // total += LoadConvolution(weightsFile, layers[60], 768, 256, 1, total);
+    // total += LoadConvolution(weightsFile, layers[61], 256, 512, 3, total);
+    // total += LoadConvolution(weightsFile, layers[62], 512, 256, 1, total);
+    // total += LoadConvolution(weightsFile, layers[63], 256, 512, 3, total);
+    // total += LoadConvolution(weightsFile, layers[64], 512, 256, 1, total);
+    // total += LoadConvolution(weightsFile, layers[65], 256, 512, 3, total);
+    // total += LoadConvolution(weightsFile, layers[66], 512, 255, 1, total, false); // coco
+    //
+    // total += LoadConvolution(weightsFile, layers[67], 256, 128, 1, total);
+    // total += LoadConvolution(weightsFile, layers[68], 384, 128, 1, total);
+    // total += LoadConvolution(weightsFile, layers[69], 128, 256, 3, total);
+    // total += LoadConvolution(weightsFile, layers[70], 256, 128, 1, total);
+    // total += LoadConvolution(weightsFile, layers[71], 128, 256, 3, total);
+    // total += LoadConvolution(weightsFile, layers[72], 256, 128, 1, total);
+    // total += LoadConvolution(weightsFile, layers[73], 128, 256, 3, total);
+    // total += LoadConvolution(weightsFile, layers[74], 256, 255, 1, total, false); // coco
+
+    total += LoadConvolution(weightsFile, layers[55], 2048, 512, 1, total);
+
+    total += LoadConvolution(weightsFile, layers[56], 512, 1024, 3, total);
+    total += LoadConvolution(weightsFile, layers[57], 1024, 512, 1, total);
+    total += LoadConvolution(weightsFile, layers[58], 512, 1024, 3, total);
+    total += LoadConvolution(weightsFile, layers[59], 1024, 255, 1, total, false); // coco
+
+    total += LoadConvolution(weightsFile, layers[60], 512, 256, 1, total);
+    total += LoadConvolution(weightsFile, layers[61], 768, 256, 1, total);
+    total += LoadConvolution(weightsFile, layers[62], 256, 512, 3, total);
+    total += LoadConvolution(weightsFile, layers[63], 512, 256, 1, total);
+    total += LoadConvolution(weightsFile, layers[64], 256, 512, 3, total);
+    total += LoadConvolution(weightsFile, layers[65], 512, 256, 1, total);
+    total += LoadConvolution(weightsFile, layers[66], 256, 512, 3, total);
+    total += LoadConvolution(weightsFile, layers[67], 512, 255, 1, total, false); // coco
+
+    total += LoadConvolution(weightsFile, layers[68], 256, 128, 1, total);
+    total += LoadConvolution(weightsFile, layers[69], 384, 128, 1, total);
+    total += LoadConvolution(weightsFile, layers[70], 128, 256, 3, total);
+    total += LoadConvolution(weightsFile, layers[71], 256, 128, 1, total);
+    total += LoadConvolution(weightsFile, layers[72], 128, 256, 3, total);
+    total += LoadConvolution(weightsFile, layers[73], 256, 128, 1, total);
+    total += LoadConvolution(weightsFile, layers[74], 128, 256, 3, total);
+    total += LoadConvolution(weightsFile, layers[75], 256, 255, 1, total, false); // coco
 
     model.Parameters() = parameters;
     std::cout << "Total Weights (excluding rolling means/variances): "
@@ -1038,23 +1133,32 @@ class YOLOv3 {
   Model model;
   std::vector<size_t> layers;
   MatType parameters;
+  bool spp;
 };
 
 int main(int argc, const char** argv) {
   // Settings
   const size_t numClasses = 80; // coco
-  const size_t imgSize = 320; 
+  const size_t imgSize = 320;
   const size_t imgChannels = 3;
   const size_t predictionsPerCell = 3;
+  const bool spp = true;
   // const size_t numBoxes = 22743; // 608
   // const size_t numBoxes = 10647; // 416
   const size_t numBoxes = 6300; // 320
-  const double ignoreProb = 0.8;
+  const double ignoreProb = 0.5;
   const size_t borderSize = 4;
   const double letterSize = 1.5;
   const std::string lettersDir = "../data/labels";
   const std::string labelsFile = "../data/coco.names";
-  const std::string weightsFile = "../weights/yolov3-320.weights";
+
+  std::string weightsFile = "../weights/yolov3-608.weights";
+  if (spp)
+  {
+    weightsFile = "../weights/yolov3-spp.weights";
+    std::cout << "Using spatial pyramid pooling\n";
+  }
+
 
   if (argc != 3)
     throw std::logic_error("usage: ./main <input_image> <output_image>");
@@ -1073,7 +1177,7 @@ int main(int argc, const char** argv) {
   LetterBox(image, input);
 
   YOLOv3<arma::fmat> model
-    (imgSize, numClasses, predictionsPerCell, weightsFile);
+    (imgSize, numClasses, predictionsPerCell, weightsFile, spp);
 
   model.Training(false);
 
@@ -1094,5 +1198,7 @@ int main(int argc, const char** argv) {
 
   std::cout << "Saving to " << outputFile << ".\n";
   SaveImage(outputFile, image);
+
+  // std::cout << detections.t() << "\n";
   return 0;
 }
