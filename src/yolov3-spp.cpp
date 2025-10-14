@@ -671,7 +671,12 @@ class YOLOv3 {
     size_t layer75 = Convolution(512, 1);
     size_t layer76 = Convolution(1024, 3);
     size_t layer77 = Convolution(512, 1);
+
+    size_t sppConvolution = Convolution(512, 1);
+    SpatialPyramidPooling(layer77, sppConvolution);
+
     size_t layer78 = Convolution(1024, 3);
+
     size_t layer79 = Convolution(512, 1);
     size_t layer80 = Convolution(1024, 3);
     size_t layer81 = Convolution(255, 1, 1, false); // coco
@@ -682,7 +687,9 @@ class YOLOv3 {
     model.Connect(layer74, layer75);
     model.Connect(layer75, layer76);
     model.Connect(layer76, layer77);
-    model.Connect(layer77, layer78);
+
+    model.Connect(sppConvolution, layer78);
+
     model.Connect(layer78, layer79);
     model.Connect(layer79, layer80);
     model.Connect(layer80, layer81);
@@ -965,7 +972,7 @@ class YOLOv3 {
     // Skip header.
     weightsFile.seekg(20, std::ios::cur);
 
-    assert(layers.size() == 75);
+    assert(layers.size() == 76);
 
     size_t total = 0;
     total += LoadConvolution(weightsFile, layers[0], 3, 32, 3, total);
@@ -1031,28 +1038,30 @@ class YOLOv3 {
     total += LoadConvolution(weightsFile, layers[53], 512, 1024, 3, total);
     total += LoadConvolution(weightsFile, layers[54], 1024, 512, 1, total);
 
-    total += LoadConvolution(weightsFile, layers[55], 512, 1024, 3, total);
-    total += LoadConvolution(weightsFile, layers[56], 1024, 512, 1, total);
-    total += LoadConvolution(weightsFile, layers[57], 512, 1024, 3, total);
-    total += LoadConvolution(weightsFile, layers[58], 1024, 255, 1, total, false); // coco
+    total += LoadConvolution(weightsFile, layers[55], 2048, 512, 1, total);
 
-    total += LoadConvolution(weightsFile, layers[59], 512, 256, 1, total);
-    total += LoadConvolution(weightsFile, layers[60], 768, 256, 1, total);
-    total += LoadConvolution(weightsFile, layers[61], 256, 512, 3, total);
-    total += LoadConvolution(weightsFile, layers[62], 512, 256, 1, total);
-    total += LoadConvolution(weightsFile, layers[63], 256, 512, 3, total);
-    total += LoadConvolution(weightsFile, layers[64], 512, 256, 1, total);
-    total += LoadConvolution(weightsFile, layers[65], 256, 512, 3, total);
-    total += LoadConvolution(weightsFile, layers[66], 512, 255, 1, total, false); // coco
+    total += LoadConvolution(weightsFile, layers[56], 512, 1024, 3, total);
+    total += LoadConvolution(weightsFile, layers[57], 1024, 512, 1, total);
+    total += LoadConvolution(weightsFile, layers[58], 512, 1024, 3, total);
+    total += LoadConvolution(weightsFile, layers[59], 1024, 255, 1, total, false); // coco
 
-    total += LoadConvolution(weightsFile, layers[67], 256, 128, 1, total);
-    total += LoadConvolution(weightsFile, layers[68], 384, 128, 1, total);
-    total += LoadConvolution(weightsFile, layers[69], 128, 256, 3, total);
-    total += LoadConvolution(weightsFile, layers[70], 256, 128, 1, total);
-    total += LoadConvolution(weightsFile, layers[71], 128, 256, 3, total);
-    total += LoadConvolution(weightsFile, layers[72], 256, 128, 1, total);
-    total += LoadConvolution(weightsFile, layers[73], 128, 256, 3, total);
-    total += LoadConvolution(weightsFile, layers[74], 256, 255, 1, total, false); // coco
+    total += LoadConvolution(weightsFile, layers[60], 512, 256, 1, total);
+    total += LoadConvolution(weightsFile, layers[61], 768, 256, 1, total);
+    total += LoadConvolution(weightsFile, layers[62], 256, 512, 3, total);
+    total += LoadConvolution(weightsFile, layers[63], 512, 256, 1, total);
+    total += LoadConvolution(weightsFile, layers[64], 256, 512, 3, total);
+    total += LoadConvolution(weightsFile, layers[65], 512, 256, 1, total);
+    total += LoadConvolution(weightsFile, layers[66], 256, 512, 3, total);
+    total += LoadConvolution(weightsFile, layers[67], 512, 255, 1, total, false); // coco
+
+    total += LoadConvolution(weightsFile, layers[68], 256, 128, 1, total);
+    total += LoadConvolution(weightsFile, layers[69], 384, 128, 1, total);
+    total += LoadConvolution(weightsFile, layers[70], 128, 256, 3, total);
+    total += LoadConvolution(weightsFile, layers[71], 256, 128, 1, total);
+    total += LoadConvolution(weightsFile, layers[72], 128, 256, 3, total);
+    total += LoadConvolution(weightsFile, layers[73], 256, 128, 1, total);
+    total += LoadConvolution(weightsFile, layers[74], 128, 256, 3, total);
+    total += LoadConvolution(weightsFile, layers[75], 256, 255, 1, total, false); // coco
 
     model.Parameters() = parameters;
     std::cout << "Total Weights (excluding rolling means/variances): "
@@ -1085,7 +1094,8 @@ int main(int argc, const char** argv) {
   const std::string lettersDir = "../data/labels";
   const std::string labelsFile = "../data/coco.names";
 
-  std::string weightsFile = "../weights/yolov3-608.weights";
+  const std::string weightsFile = "../weights/yolov3-spp.weights";
+
 
   if (argc != 3)
     throw std::logic_error("usage: ./main <input_image> <output_image>");
