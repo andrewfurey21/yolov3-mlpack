@@ -673,9 +673,6 @@ class YOLOv3 {
     size_t layer76 = Convolution(1024, 3);
     size_t layer77 = Convolution(512, 1);
 
-    size_t layer1 = MaxPool(13);
-    size_t layer2 = MaxPool(9);
-    size_t layer3 = MaxPool(5);
     size_t sppConvolution = Convolution(512, 1);
 
     size_t layer78 = Convolution(1024, 3);
@@ -693,18 +690,8 @@ class YOLOv3 {
     // if (!spp)
     //   model.Connect(layer77, layer78);
 
-    model.Connect(layer77, layer1);
-    model.Connect(layer77, layer2);
-    model.Connect(layer77, layer3);
-    model.Connect(layer1, sppConvolution);
-    model.Connect(layer2, sppConvolution);
-    model.Connect(layer3, sppConvolution);
-    model.Connect(layer77, sppConvolution);
-
-    std::cout << "Order: " << layer1 << ", " << layer2 << ", " << layer3 << ", " << layer77 << "\n";
+    SpatialPyramidPooling(layer77, sppConvolution);
     model.Connect(sppConvolution, layer78);
-
-    //
 
     model.Connect(layer78, layer79);
     model.Connect(layer79, layer80);
@@ -861,9 +848,9 @@ class YOLOv3 {
 
   void SpatialPyramidPooling(const size_t input, const size_t output)
   {
-    size_t layer1 = MaxPool(5);
+    size_t layer1 = MaxPool(13);
     size_t layer2 = MaxPool(9);
-    size_t layer3 = MaxPool(13);
+    size_t layer3 = MaxPool(5);
 
     model.Connect(input, layer1);
     model.Connect(input, layer2);
