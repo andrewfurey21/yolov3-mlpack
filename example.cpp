@@ -1,4 +1,3 @@
-
 #include "./yolov3/serialization.hpp"
 #include "./yolov3/image.hpp"
 #include "./yolov3/boundingbox.hpp"
