@@ -1,4 +1,5 @@
 build/*
 weights/*
 **.jpg
+**.png
 images/*
