@@ -1,6 +1,6 @@
 # yolov3 in mlpack
 
-![Example image](./example.png)
+<img src="./example.png" width="400" alt="App Screenshot">
 
 Implementation of the yolov3 family of models in mlpack.
 
