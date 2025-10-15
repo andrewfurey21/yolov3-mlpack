@@ -297,17 +297,28 @@ class BoundingBox
  public:
   // Expects format: cx, cy, w, h
   BoundingBox(const double cx, const double cy, const double w, const double h,
-              const size_t objectClass) : objectClass(objectClass)
+              const size_t objectClass, const double objectProb, const size_t numClasses) : objectClass(objectClass), objectProb(objectProb), numClasses(numClasses)
   {
     x1 = cx - w / 2.0;
     x2 = cx + w / 2.0;
     y1 = cy - h / 2.0;
     y2 = cy + h / 2.0;
 
-    // TODO: get colors
-    red = 0.98;
-    green = 0.90;
-    blue = 0.15;
+    Color();
+  }
+
+  void Color()
+  {
+    float colors[6][3] = { {1,0,1}, {0,0,1}, {0,1,1}, {0,1,0}, {1,1,0}, {1,0,0} };
+
+    float ratio = ((float)objectClass / numClasses) * 5;
+    int i = floor(ratio);
+    int j = ceil(ratio);
+    ratio -= i;
+
+    red = (1 - ratio) * colors[i][0] + ratio*colors[j][0];
+    green = (1 - ratio) * colors[i][1] + ratio*colors[j][1];
+    blue = (1 - ratio) * colors[i][2] + ratio*colors[j][2];
   }
 
   void Draw(Image& image,
@@ -369,13 +380,18 @@ class BoundingBox
                  const double size,
                  const std::unordered_map<char, Image>& alphabet)
   {
+    std::ostringstream newLabel;
+    newLabel << label << ": " << std::to_string((int)(roundf(objectProb * 100)))
+      << "%";
+
     double x1 = std::clamp<double>(this->x1, 0, image.info.Width() - 1);
     double y1 = std::clamp<double>(this->y1, 0, image.info.Height() - 1);
 
     double dx = x1;
-    for (size_t i = 0; i < label.size(); i++)
+    const std::string& actualLabel = newLabel.str();
+    for (size_t i = 0; i < actualLabel.size(); i++)
     {
-      char letter = label[i];
+      char letter = actualLabel[i];
       Image letterImage = alphabet.at(letter);
       Image resized(letterImage.info.Width() * size, letterImage.info.Height() * size, 3);
 
@@ -396,6 +412,8 @@ class BoundingBox
   double green;
   double blue;
   size_t objectClass;
+  double objectProb;
+  size_t numClasses;
 };
 
 /*
@@ -440,10 +458,7 @@ void DrawBoxes(const arma::fmat& modelOutput,
       box * predictionSize);
     float objectness = prediction.at(4, 0);
     if (objectness < ignoreProb)
-    {
-      // std::cout << objectness << ", ";
       continue;
-    }
     double x, y, w, h;
     x = prediction.at(0, 0) * xRatio;
     y = prediction.at(1, 0) * yRatio;
@@ -455,12 +470,9 @@ void DrawBoxes(const arma::fmat& modelOutput,
     const float objectProb = objectness * classProbs.at(classIndex);
 
     if (objectProb < ignoreProb)
-    {
-      // std::cout << objectProb << ", ";
       continue;
-    }
     std::cout << labels[classIndex] << ": " << roundf(objectProb * 100) << "%\n";
-    BoundingBox bbox(x, y, w, h, classIndex);
+    BoundingBox bbox(x, y, w, h, classIndex, objectProb, labels.size());
     bbox.Draw(image, borderSize, labels, alphabet, letterSize);
   }
 }
@@ -675,9 +687,6 @@ class YOLOv3 {
     size_t layer79 = Convolution(512, 1);
     size_t layer80 = Convolution(1024, 3);
     size_t layer81 = Convolution(255, 1, 1, false); // coco
-    // size_t detection0 = YOLO(imgSize, 19, {116, 90, 156, 198, 373, 326}); // 608
-    // size_t detection0 = YOLO(imgSize, 13, {116, 90, 156, 198, 373, 326}); // 416
-    size_t detection0 = YOLO(imgSize, 10, {116, 90, 156, 198, 373, 326}); // 320
 
     model.Connect(layer74, layer75);
     model.Connect(layer75, layer76);
@@ -686,7 +695,6 @@ class YOLOv3 {
     model.Connect(layer78, layer79);
     model.Connect(layer79, layer80);
     model.Connect(layer80, layer81);
-    model.Connect(layer81, detection0);
 
     size_t layer82 = Convolution(256, 1);
     size_t upsample82 = model.template Add<mlpack::NearestInterpolation<MatType>>(scale);
@@ -700,9 +708,6 @@ class YOLOv3 {
     size_t layer88 = Convolution(256, 1);
     size_t layer89 = Convolution(512, 3);
     size_t layer90 = Convolution(255, 1, 1, false); // coco
-    // size_t detection1 = YOLO(imgSize, 38, {30, 61, 62, 45, 59, 119}); // 608
-    // size_t detection1 = YOLO(imgSize, 26, {30, 61, 62, 45, 59, 119}); // 416
-    size_t detection1 = YOLO(imgSize, 20, {30, 61, 62, 45, 59, 119}); // 320
 
     // Concat
     model.Connect(upsample82, layer84);
@@ -714,7 +719,6 @@ class YOLOv3 {
     model.Connect(layer87, layer88);
     model.Connect(layer88, layer89);
     model.Connect(layer89, layer90);
-    model.Connect(layer90, detection1);
 
     size_t layer91 = Convolution(128, 1);
     size_t upsample91 = model.template Add<mlpack::NearestInterpolation<MatType>>(scale);
@@ -728,9 +732,6 @@ class YOLOv3 {
     size_t layer97 = Convolution(128, 1);
     size_t layer98 = Convolution(256, 3);
     size_t layer99 = Convolution(255, 1, 1, false); // coco
-    // size_t detection2 = YOLO(imgSize, 76, {10, 13, 16, 30, 33, 23}); // 608
-    // size_t detection2 = YOLO(imgSize, 52, {10, 13, 16, 30, 33, 23}); // 416
-    size_t detection2 = YOLO(imgSize, 40, {10, 13, 16, 30, 33, 23}); // 320
 
     // Concat
     model.Connect(upsample91, layer93);
@@ -742,6 +743,41 @@ class YOLOv3 {
     model.Connect(layer96, layer97);
     model.Connect(layer97, layer98);
     model.Connect(layer98, layer99);
+
+    size_t detection0, detection1, detection2;
+
+    switch (imgSize)
+    {
+      case 320:
+      {
+        detection0 = YOLO(imgSize, 10, {116, 90, 156, 198, 373, 326});
+        detection1 = YOLO(imgSize, 20, {30, 61, 62, 45, 59, 119});
+        detection2 = YOLO(imgSize, 40, {10, 13, 16, 30, 33, 23});
+        break;
+      }
+
+      case 416:
+      {
+        detection0 = YOLO(imgSize, 13, {116, 90, 156, 198, 373, 326});
+        detection1 = YOLO(imgSize, 26, {30, 61, 62, 45, 59, 119});
+        detection2 = YOLO(imgSize, 52, {10, 13, 16, 30, 33, 23});
+        break;
+      }
+
+      case 608:
+      {
+        detection0 = YOLO(imgSize, 19, {116, 90, 156, 198, 373, 326});
+        detection1 = YOLO(imgSize, 38, {30, 61, 62, 45, 59, 119});
+        detection2 = YOLO(imgSize, 76, {10, 13, 16, 30, 33, 23});
+        break;
+      }
+
+      default:
+        throw std::logic_error("YOLO layer for this imgSize does not exist");
+    }
+
+    model.Connect(layer81, detection0);
+    model.Connect(layer90, detection1);
     model.Connect(layer99, detection2);
 
     // Concat outputs.
@@ -1076,10 +1112,14 @@ int main(int argc, const char** argv) {
   const size_t imgSize = 320;
   const size_t imgChannels = 3;
   const size_t predictionsPerCell = 3;
-  // const size_t numBoxes = 22743; // 608
-  // const size_t numBoxes = 10647; // 416
-  const size_t numBoxes = 6300; // 320
-  const double ignoreProb = 0.5;
+
+  size_t numBoxes = 6300;
+  if (imgSize == 416)
+    numBoxes = 10647;
+  else if (imgSize == 608)
+    numBoxes = 22743;
+
+  const double ignoreProb = 0.8;
   const size_t borderSize = 4;
   const double letterSize = 1.5;
   const std::string lettersDir = "../data/labels";
