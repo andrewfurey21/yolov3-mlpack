@@ -1,10 +1,18 @@
-# yolov3-tiny in mlpack
+# yolov3 in mlpack
 
-Implementation of the yolov3-tiny architecture in mlpack.
+![Example image](./example.png)
+
+Implementation of the yolov3 family of models in mlpack.
+
+## Features
+
+## Requirements
 
 requires arma15(or master?) (repcube)
 
-Here's an example of running `yolov3-tiny` in ~30 lines.
+## Example
+
+Here's an example of running `yolov3-tiny` in ~30 lines. Download weights [here](https://drive.google.com/drive/folders/1BiACM5LxcD1m3wkutQ8GtVesWXfSCdeK). You can compile it with `g++ example.cpp -O3 -o example -larmadillo`.
 
 ```cpp
 #include "./yolov3/serialization.hpp"
@@ -39,19 +47,4 @@ int main() {
   SaveImage(outputFile, image);
   return 0;
 }
-```
-
-```
-@article{DBLP:journals/corr/abs-1804-02767,
-    author       = {Joseph Redmon and Ali Farhadi},
-    title        = {YOLOv3: An Incremental Improvement},
-    journal      = {CoRR},
-    volume       = {abs/1804.02767},
-    year         = {2018},
-    url          = {http://arxiv.org/abs/1804.02767},
-    eprinttype    = {arXiv},
-    eprint       = {1804.02767},
-    timestamp    = {Mon, 13 Aug 2018 16:48:24 +0200},
-    biburl       = {https://dblp.org/rec/journals/corr/abs-1804-02767.bib},
-    bibsource    = {dblp computer science bibliography, https://dblp.org}
 ```

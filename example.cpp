@@ -6,8 +6,8 @@
 using namespace mlpack;
 
 int main() {
-  const std::string inputFile = "./images/giraffe.jpg";
-  const std::string outputFile = "./giraffe.jpg";
+  const std::string inputFile = "./images/mepoint.jpg";
+  const std::string outputFile = "./mepoint-320.jpg";
   const size_t imgSize = 416;
   const size_t numBoxes = 2535; // 2535, 6300, 10647, 22743
   const double ignoreThresh = 0.7;
