@@ -76,8 +76,6 @@ void ResizeImage(const Image& input, Image& output)
   CheckImage(input);
   CheckImage(output);
 
-  std::cout << input.info.Channels() << "\n";
-  std::cout << output.info.Channels() << "\n";
   assert(input.info.Channels() == output.info.Channels());
   const size_t channels = input.info.Channels();
   const size_t w = output.info.Width();

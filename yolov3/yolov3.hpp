@@ -1,7 +1,8 @@
 #ifndef YOLOV3_HPP
 #define YOLOV3_HPP
 
-#include "mlpack.hpp" // TODO: only include what you need
+#include "serialization.hpp" // Comment for faster compile times.
+#include <mlpack.hpp>
 #include "image.hpp"
 #include "boundingbox.hpp"
 #include "labels.hpp"
