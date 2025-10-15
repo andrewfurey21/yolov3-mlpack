@@ -4,3 +4,4 @@ weights/*
 **.png
 images/*
 example
+!example.png
