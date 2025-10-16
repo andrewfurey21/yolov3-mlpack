@@ -3,9 +3,44 @@
 
 #include "boundingbox.hpp"
 
-inline double LineOverlap(double a, double aw, double b, double bw) {
-  return std::abs(std::max(a - aw / 2, b - bw / 2) -
-                  std::min(a + aw / 2, b + bw / 2));
+inline double Intersection(const BoundingBox& a, const BoundingBox& b)
+{
+  const double w = std::max((std::min(a.x2, b.x2) - std::max(a.x1, b.x1)), 0.0);
+  const double h = std::max((std::min(a.y2, b.y2) - std::max(a.y1, b.y1)), 0.0);
+  return w * h;
+}
+
+inline double Union(const BoundingBox& a, const BoundingBox& b)
+{
+  const double aw = a.x2 - a.x1;
+  const double ah = a.y2 - a.y1;
+  const double bw = b.x2 - b.x1;
+  const double bh = b.y2 - b.y1;
+  return (aw * ah) + (bw * bh) - Intersection(a, b);
+}
+
+inline void NonMaxSuppression(std::vector<BoundingBox>& bboxes,
+                              const double threshold)
+{
+  if (bboxes.size() == 0)
+    return;
+
+  std::sort(bboxes.begin(), bboxes.end(), std::greater<BoundingBox>());
+  for (size_t i = 0; i < bboxes.size() - 1; i++)
+  {
+    for (size_t j = i + 1; j < bboxes.size(); j++)
+    {
+      const BoundingBox& a = bboxes[i];
+      BoundingBox& b = bboxes[j];
+
+      if (a.objectClass != b.objectClass)
+        continue;
+
+      const double iou = Intersection(a, b) / Union(a, b);
+      if (iou > threshold)
+        b.objectProb = 0;
+    }
+  }
 }
 
 inline void DrawBoxes(const arma::fmat& modelOutput,
@@ -38,6 +73,7 @@ inline void DrawBoxes(const arma::fmat& modelOutput,
 
   double xRatio = (double)image.info.Width() / imgSize;
   double yRatio = (double)image.info.Height() / imgSize;
+  std::vector<BoundingBox> bboxes;
 
   const size_t predictionSize = modelOutput.n_rows / numBoxes;
   for (size_t box = 0; box < numBoxes; box++)
@@ -62,8 +98,12 @@ inline void DrawBoxes(const arma::fmat& modelOutput,
       continue;
     std::cout << labels[classIndex] << ": " << roundf(objectProb * 100) << "%\n";
     BoundingBox bbox(x, y, w, h, classIndex, objectProb, labels.size());
-    bbox.Draw(image, borderSize, labels, alphabet, letterSize);
+    bboxes.push_back(bbox);
   }
+
+  NonMaxSuppression(bboxes);
+  for (auto& bbox : bboxes)
+    bbox.Draw(image, borderSize, labels, alphabet, letterSize);
 }
 
 #endif

@@ -36,9 +36,9 @@ class BoundingBox
     int j = ceil(ratio);
     ratio -= i;
 
-    red = (1 - ratio) * colors[i][0] + ratio*colors[j][0];
-    green = (1 - ratio) * colors[i][1] + ratio*colors[j][1];
-    blue = (1 - ratio) * colors[i][2] + ratio*colors[j][2];
+    red = (1 - ratio) * colors[i][0] + ratio * colors[j][0];
+    green = (1 - ratio) * colors[i][1] + ratio * colors[j][1];
+    blue = (1 - ratio) * colors[i][2] + ratio * colors[j][2];
   }
 
   void Draw(Image& image,
@@ -56,6 +56,9 @@ class BoundingBox
 
     if (x1 > x2 || y1 > y2)
       throw std::logic_error("Bounding box has a bad shape.");
+
+    if (objectProb == 0)
+      return;
 
     // Assumes image is layed out planar, i.e r, r, ... g, g, ... b, b
     for (int b = 0; b < borderSize; b++)
@@ -123,16 +126,22 @@ class BoundingBox
     }
   }
 
- private:
+  bool operator> (const BoundingBox& other) const
+  {
+    return objectProb > other.objectProb;
+  }
+
   double x1;
   double y1;
   double x2;
   double y2;
+  double objectProb;
+  size_t objectClass;
+
+ private:
   double red;
   double green;
   double blue;
-  size_t objectClass;
-  double objectProb;
   size_t numClasses;
 };
 
@@ -150,10 +159,16 @@ void DrawBoxes(const arma::fmat& modelOutput,
                Image& image);
 
 /*
- *  Return how much a vertical or horizontal line overlap, where `a` and `b` are
- *  mid-points and `aw` and `bw` are widths/heights of those lines.
+ * Do non max suppression to get rid of extra boxes.
  */
-double LineOverlap(double a, double aw, double b, double bw);
+
+inline void NonMaxSuppression(std::vector<BoundingBox>& bboxes,
+                              const double threshold = 0.45);
+
+double Intersection(const BoundingBox& a, const BoundingBox& b);
+
+double Union(const BoundingBox& a, const BoundingBox& b);
+
 
 #include "boundingbox_impl.hpp"
 

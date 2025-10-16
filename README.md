@@ -1,18 +1,22 @@
 # yolov3 in mlpack
 
-<img src="./example.png" width="400" alt="App Screenshot">
+<div align="center">
+  <img src="./example.png" width="400" alt="App Screenshot">
+</div>
 
-Implementation of the yolov3 family of models in mlpack.
-
-## Features
+Implementation of the yolov3 family of models in mlpack, including yolov3, yolov3-tiny and yolov3-spp.
 
 ## Requirements
 
-requires arma15(or master?) (repcube)
+mlpack master, armadillo 15
 
 ## Example
 
-Here's an example of running `yolov3-tiny` in ~30 lines. Download weights [here](https://drive.google.com/drive/folders/1BiACM5LxcD1m3wkutQ8GtVesWXfSCdeK). You can compile it with `g++ example.cpp -O3 -o example -larmadillo`.
+Here's an example of running `yolov3-tiny` in ~30 lines. You can download the weights [here](https://drive.google.com/drive/folders/1BiACM5LxcD1m3wkutQ8GtVesWXfSCdeK). You can compile it with:
+
+```bash
+g++ example.cpp -O3 -o example -larmadillo
+```
 
 ```cpp
 #include "./yolov3/serialization.hpp"
