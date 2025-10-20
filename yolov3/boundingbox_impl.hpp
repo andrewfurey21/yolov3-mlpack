@@ -3,6 +3,24 @@
 
 #include "boundingbox.hpp"
 
+inline void DrawLetter(Image& image, const unsigned char letter, const size_t x, const size_t y, const size_t s)
+{
+  for (char i = 0; i < 8; i++)
+  {
+    for (char j = 0; j < 8; j++)
+    {
+      int set = font8x8_basic[letter][i] & (unsigned char)(1 << j);
+      for (int k = 0; k < s * s; k++)
+      {
+        int px = x + (j * s) + (k % s);
+        int py = y + (i * s) + (k / s);
+        for (int c = 0; c < 3; c++)
+          image.SetPixel(px, py, c, !set);
+      }
+    }
+  }
+}
+
 inline double Intersection(const BoundingBox& a, const BoundingBox& b)
 {
   const double w = std::max((std::min(a.x2, b.x2) - std::max(a.x1, b.x1)), 0.0);

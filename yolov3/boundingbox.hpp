@@ -2,6 +2,9 @@
 #define BOUNDINGBOX_HPP
 
 #include "image.hpp"
+#include "font8x8_basic.h"
+
+void DrawLetter(Image& image, const unsigned char letter, const size_t x, const size_t y, const size_t s);
 
 class BoundingBox
 {
@@ -112,17 +115,23 @@ class BoundingBox
 
     double dx = x1;
     const std::string& actualLabel = newLabel.str();
+    const size_t letterSize = 3;
     for (size_t i = 0; i < actualLabel.size(); i++)
     {
-      char letter = actualLabel[i];
-      Image letterImage = alphabet.at(letter);
-      Image resized(letterImage.info.Width() * size, letterImage.info.Height() * size, 3);
+      // NOTE: Use this if using ggml's data/labels images.
+      // 
+      // char letter = actualLabel[i];
+      // Image letterImage = alphabet.at(letter);
+      // Image resized(letterImage.info.Width() * size, letterImage.info.Height() * size, 3);
+      // ResizeImage(letterImage, resized);
+      // EmbedImage(resized, image, dx, y1);
 
-      ResizeImage(letterImage, resized);
-      EmbedImage(resized, image, dx, y1);
-      dx += resized.info.Width();
-      if (dx > image.info.Width())
+      if (dx + letterSize * 8 > image.info.Width())
         break;
+
+      const unsigned char letter = actualLabel[i];
+      DrawLetter(image, letter, dx, y1, letterSize);
+      dx += letterSize * 8;
     }
   }
 

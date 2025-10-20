@@ -302,7 +302,7 @@ int main(int argc, const char** argv) {
   const double letterSize = 1.5;
   const std::string lettersDir = "../data/labels";
   const std::string labelsFile = "../data/coco.names";
-  const std::string weightsFile = "../weights/yolov3-tiny.weights";
+  const std::string weightsFile = "../weights/darknet/yolov3-tiny.weights";
   // const std::vector<double> anchors =
   //   { 10, 14, 23, 27, 37, 58, 81, 82, 135, 169, 344, 319 };
 
