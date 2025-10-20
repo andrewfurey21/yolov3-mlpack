@@ -199,22 +199,6 @@ class YOLOv3 {
     return model.Add(block);
   }
 
-  void SpatialPyramidPooling(const size_t input, const size_t output)
-  {
-    size_t layer1 = MaxPool(13);
-    size_t layer2 = MaxPool(9);
-    size_t layer3 = MaxPool(5);
-
-    model.Connect(input, layer1);
-    model.Connect(input, layer2);
-    model.Connect(input, layer3);
-
-    model.Connect(layer1, output);
-    model.Connect(layer2, output);
-    model.Connect(layer3, output);
-    model.Connect(input, output);
-  }
-
   size_t Convolution(const size_t maps, const size_t kernel, const size_t stride = 1,
     const bool batchNorm = true, const Type reluSlope = 0.1)
   {
