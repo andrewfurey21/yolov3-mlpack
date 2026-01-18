@@ -9,23 +9,18 @@ void DrawLetter(Image& image, const unsigned char letter, const size_t x, const 
 class BoundingBox
 {
  public:
-  // Expects format: cx, cy, w, h
-  BoundingBox(const double cx,
-              const double cy,
-              const double w,
-              const double h,
+  BoundingBox(const double x1,
+              const double y1,
+              const double x2,
+              const double y2,
               const size_t objectClass,
               const double objectProb,
               const size_t numClasses) :
+    x1(x1), y1(y1), x2(x2), y2(y2),
     objectClass(objectClass),
     objectProb(objectProb),
     numClasses(numClasses)
   {
-    x1 = cx - w / 2.0;
-    x2 = cx + w / 2.0;
-    y1 = cy - h / 2.0;
-    y2 = cy + h / 2.0;
-
     Color();
   }
 

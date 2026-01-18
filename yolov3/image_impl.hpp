@@ -57,9 +57,12 @@ void LoadImage(const std::string& file,
 void SaveImage(const std::string& file, Image& image)
 {
   CheckImage(image);
-  arma::fmat stbData = mlpack::data::InterleaveChannels(image.data, image.info);
-  stbData *= 255;
-  Save(file, stbData, image.info, true);
+  // arma::fmat stbData = mlpack::data::InterleaveChannels(image.data, image.info);
+  // stbData *= 255;
+  // Save(file, stbData, image.info, true);
+
+  image.data *= 255;
+  Save(file, image.data, image.info, true);
 }
 
 /*
@@ -182,6 +185,7 @@ void LetterBox(const Image& src, Image& dst)
   dst.data.fill(grayValue);
 
   size_t width, height;
+  // if (1. / src.info.Width() > 1. / src.info.Height())
   if ((float)dst.info.Width() / src.info.Width() > (float)dst.info.Height() / src.info.Height())
   {
     height = dst.info.Height();
@@ -189,8 +193,10 @@ void LetterBox(const Image& src, Image& dst)
   }
   else
   {
+    // landscape
     width = dst.info.Width();
     height = src.info.Height() * dst.info.Width() / src.info.Width();
+    // letterbox height = old height * (new width / old width)
   }
 
   Image resizedImage(width, height, dst.info.Channels());

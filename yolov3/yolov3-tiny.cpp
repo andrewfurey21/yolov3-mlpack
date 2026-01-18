@@ -1,5 +1,6 @@
 
 #include "yolov3.hpp"
+#include <mlpack/core/data/image_layout.hpp>
 
 template <typename MatType = arma::fmat>
 class YOLOv3tiny {
@@ -298,11 +299,11 @@ int main(int argc, const char** argv) {
   const size_t predictionsPerCell = 3;
   const size_t numBoxes = 13 * 13 * 3 + 26 * 26 * 3;
   const double ignoreProb = 0.5;
-  const size_t borderSize = 4;
+  const size_t borderSize = 10;
   const double letterSize = 1.5;
-  const std::string lettersDir = "../data/labels";
-  const std::string labelsFile = "../data/coco.names";
-  const std::string weightsFile = "../weights/darknet/yolov3-tiny.weights";
+  const std::string lettersDir = "./data/labels";
+  const std::string labelsFile = "./data/coco.names";
+  const std::string weightsFile = "./weights/darknet/yolov3-tiny.weights";
   // const std::vector<double> anchors =
   //   { 10, 14, 23, 27, 37, 58, 81, 82, 135, 169, 344, 319 };
 
@@ -330,6 +331,8 @@ int main(int argc, const char** argv) {
 
   std::cout << "Model output shape: " << model.OutputDimensions() << "\n";
 
+  // Image output = Image(mlpack::data::InterleaveChannels(input.data, input.info), input.info);
+  Image output = Image(mlpack::data::InterleaveChannels(image.data, image.info), image.info);
   DrawBoxes(detections,
             numBoxes,
             ignoreProb,
@@ -338,9 +341,9 @@ int main(int argc, const char** argv) {
             letterSize,
             labels,
             alphabet,
-            image);
+            output);
 
   std::cout << "Saving to " << outputFile << ".\n";
-  SaveImage(outputFile, image);
+  SaveImage(outputFile, output);
   return 0;
 }
