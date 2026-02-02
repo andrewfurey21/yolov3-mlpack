@@ -1,7 +1,7 @@
 #define MLPACK_ANN_IGNORE_SERIALIZATION_WARNING
 
 #include <mlpack.hpp>
-#include "yolov3_layer.hpp"
+// #include "yolov3_layer.hpp"
 
 CEREAL_REGISTER_TYPE(mlpack::Layer<arma::fmat>)
 CEREAL_REGISTER_TYPE(mlpack::Identity<arma::fmat>)

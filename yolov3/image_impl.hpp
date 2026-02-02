@@ -23,7 +23,7 @@ void CheckImage(const Image& image)
 }
 
 /*
- *  Loads an image, normalize it values and convert to mlpack layout.
+ *  Loads an image, normalize it values and group channels
  */
 void LoadImage(const std::string& file,
                Image& image,
@@ -33,7 +33,7 @@ void LoadImage(const std::string& file,
     image.info.Channels() = 1;
   Load(file, image.data, image.info, true);
   image.data /= 255.0f;
-  image.data = mlpack::data::GroupChannels(image.data, image.info);
+  // image.data = mlpack::data::GroupChannels(image.data, image.info);
 
   // Hack so that other image processing functions work.
   if (grayscale)

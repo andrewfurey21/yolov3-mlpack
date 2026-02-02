@@ -148,8 +148,8 @@ inline void DrawBoxes(const arma::fmat& modelOutput,
     red = red.t();
     pos = pos.t();
     mlpack::data::BoundingBoxImage(image.data, image.info, pos, red);
-  }
     // bbox.Draw(image, borderSize, labels, alphabet, letterSize);
+  }
 }
 
 #endif

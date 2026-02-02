@@ -124,7 +124,7 @@ class YOLOv3 {
     model.Reset();
 
     LoadWeights(weightsFile);
-    mlpack::data::Save("../weights/mlpack/yolov3-608.bin", "yolov3-608", model);
+    mlpack::data::Save("../weights/mlpack/yolov3-320-dagnetwork.bin", "yolov3-320-dagnetwork", model);
     std::cout << "Saved weights\n";
   }
 
@@ -427,7 +427,7 @@ class YOLOv3 {
 int main(int argc, const char** argv) {
   // Settings
   const size_t numClasses = 80; // coco
-  const size_t imgSize = 608;
+  const size_t imgSize = 320;
   const size_t imgChannels = 3;
   const size_t predictionsPerCell = 3;
 
@@ -443,42 +443,42 @@ int main(int argc, const char** argv) {
   const std::string lettersDir = "../data/labels";
   const std::string labelsFile = "../data/coco.names";
 
-  std::string weightsFile = "../weights/darknet/yolov3-608.weights";
+  std::string weightsFile = "../weights/darknet/yolov3-320.weights";
 
-  if (argc != 3)
-    throw std::logic_error("usage: ./main <input_image> <output_image>");
-
-  const std::string inputFile = argv[1];
-  const std::string outputFile = argv[2];
-
-  const std::unordered_map<char, Image> alphabet = GetAlphabet(lettersDir);
-  const std::vector<std::string> labels = GetLabels(labelsFile, numClasses);
-
-  Image image;
-  Image input(imgSize, imgSize, imgChannels);
-  arma::fmat detections;
-
-  LoadImage(inputFile, image);
-  LetterBox(image, input);
+  // if (argc != 3)
+  //   throw std::logic_error("usage: ./main <input_image> <output_image>");
+  //
+  // const std::string inputFile = argv[1];
+  // const std::string outputFile = argv[2];
+  //
+  // const std::unordered_map<char, Image> alphabet = GetAlphabet(lettersDir);
+  // const std::vector<std::string> labels = GetLabels(labelsFile, numClasses);
+  //
+  // Image image;
+  // Image input(imgSize, imgSize, imgChannels);
+  // arma::fmat detections;
+  //
+  // LoadImage(inputFile, image);
+  // LetterBox(image, input);
 
   YOLOv3<arma::fmat> model
     (imgSize, numClasses, predictionsPerCell, weightsFile);
 
-  model.Training(false);
-  model.Predict(input.data, detections);
-  std::cout << "Model output shape: " << model.OutputDimensions() << "\n";
-
-  DrawBoxes(detections,
-            numBoxes,
-            ignoreProb,
-            borderSize,
-            imgSize,
-            letterSize,
-            labels,
-            alphabet,
-            image);
-
-  std::cout << "Saving to " << outputFile << ".\n";
-  SaveImage(outputFile, image);
+  // model.Training(false);
+  // model.Predict(input.data, detections);
+  // std::cout << "Model output shape: " << model.OutputDimensions() << "\n";
+  //
+  // DrawBoxes(detections,
+  //           numBoxes,
+  //           ignoreProb,
+  //           borderSize,
+  //           imgSize,
+  //           letterSize,
+  //           labels,
+  //           alphabet,
+  //           image);
+  //
+  // std::cout << "Saving to " << outputFile << ".\n";
+  // SaveImage(outputFile, image);
   return 0;
 }
