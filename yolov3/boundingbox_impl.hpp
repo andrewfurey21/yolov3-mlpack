@@ -58,8 +58,6 @@ inline void NonMaxSuppression(std::vector<BoundingBox>& bboxes,
       const double iou = Intersection(a, b) / Union(a, b);
       if (iou > threshold) {
         b.objectProb = 0;
-      } else {
-        std::cout << "IOU: " << iou << "\n";
       }
     }
   }
