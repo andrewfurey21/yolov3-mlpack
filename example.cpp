@@ -87,11 +87,14 @@ std::vector<std::string> GetLabels(const std::string& path, size_t numClasses)
   return labels;
 }
 
-int main() {
-  const std::string inputFile = "./images/dog.jpg";
-  const std::string outputFile = "./images/output.jpg";
-  const std::string modelFile = "./weights/mlpack/yolov3-320.bin";
-  const std::string labelsFile = "./data/coco.names";
+int main(int argc, const char** argv) {
+  if (argc != 5)
+    throw std::logic_error("usage: ./yolov3 <weights_file> <coco_names> <input_image> <output_image>");
+
+  const std::string inputFile = argv[3];
+  const std::string outputFile = argv[4];
+  const std::string modelFile = argv[1];
+  const std::string labelsFile = argv[2];
   const size_t imgSize = 320;
   const size_t numBoxes = 6300; // 2535, 6300, 10647, 22743
   const double ignoreThresh = 0.7;
@@ -105,7 +108,6 @@ int main() {
     std::cout << "Error: could not load " + modelFile;
     return -1;
   }
-  // mlpack::Load("./weights/mlpack/yolov3-320.bin", "yolov3-320", model);
 
   arma::fmat image;
   mlpack::ImageInfo info;
