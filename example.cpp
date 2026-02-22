@@ -13,7 +13,7 @@ CEREAL_REGISTER_TYPE(mlpack::NearestInterpolation<arma::fmat>)
 CEREAL_REGISTER_TYPE(mlpack::YOLOv3Layer<arma::fmat>)
 
 int main(int argc, const char** argv) {
-  if (argc != 5) {
+  if (argc != 4) {
     std::cout << "usage: ./yolov3 <weights_file> <input_image> <output_image>\n";
     return -1;
   }
@@ -21,6 +21,8 @@ int main(int argc, const char** argv) {
   const std::string inputFile = argv[2];
   const std::string outputFile = argv[3];
   const std::string modelFile = argv[1];
+
+  const double ignoreThreshold = 0.7; // 0.5 for yolov3-tiny
 
   // Load model
   mlpack::YOLOv3 model;
@@ -31,7 +33,7 @@ int main(int argc, const char** argv) {
   }
 
   // Load image
-  arma::fmat image, outputImage;
+  arma::fmat image;
   mlpack::ImageInfo info;
   bool imageSuccess = mlpack::Load(inputFile, image, info, true);
   if (!imageSuccess) {
@@ -40,10 +42,10 @@ int main(int argc, const char** argv) {
   }
 
   // Inference
-  model.Predict(image, info, outputImage);
+  model.Predict(image, info, ignoreThreshold);
 
   // Save image with bounding boxes.
-  bool saveSuccess = mlpack::Save(outputFile, outputImage, info, true);
+  bool saveSuccess = mlpack::Save(outputFile, image, info, true);
   if (!saveSuccess) {
     std::cout << "Error: could not save " + outputFile << "\n";
     return -1;
