@@ -1,7 +1,7 @@
 # yolov3 in mlpack
 
 <div align="center">
-  <img src="./readme.png" width="400" alt="">
+  <img src="./output.jpg" width="400" alt="">
 </div>
 
 Implementation of the yolov3 family of models in mlpack, including yolov3, yolov3-tiny and yolov3-spp.

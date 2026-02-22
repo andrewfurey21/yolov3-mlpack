@@ -4,5 +4,5 @@ weights/*
 **.png
 images/*
 example
-!output.png
+!output.jpg
 yolov3-inference
