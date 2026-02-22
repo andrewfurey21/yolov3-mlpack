@@ -12,17 +12,12 @@ mlpack master, armadillo 15
 
 ## Example
 
-You can download the weights [here](https://drive.google.com/drive/folders/1BiACM5LxcD1m3wkutQ8GtVesWXfSCdeK). You can compile and run it with:
+You can download the weights for running the yolov3 example in `example.cpp` [here](https://drive.google.com/drive/folders/1BiACM5LxcD1m3wkutQ8GtVesWXfSCdeK). You can compile and run it with:
 
 ```bash
-g++ example.cpp -O3 -o yolov3-inference -larmadillo -fopenmp
+g++ example.cpp -O3 -o detect -larmadillo -fopenmp
 
 # yolov3 (~60 million parameters)
-./yolov3-inference yolov3-320.bin ./data/coco.names dog.jpg output.jpg
-
-# yolov3-tiny (~8 million parameters)
-./yolov3-inference yolov3-tiny.bin ./data/coco.names dog.jpg output.jpg
+./detect yolov3-320.bin dog.jpg output.jpg
 
 ```
-
-Because of how mlpack serializes models, you can run `yolov3` or `yolov3-tiny` without changing anything other than the weights you pass in.
