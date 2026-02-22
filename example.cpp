@@ -22,6 +22,7 @@ int main(int argc, const char** argv) {
   const std::string outputFile = argv[3];
   const std::string modelFile = argv[1];
 
+  // Load model
   mlpack::YOLOv3 model;
   bool modelSuccess = mlpack::Load(modelFile, model);
   if (!modelSuccess) {
@@ -29,6 +30,7 @@ int main(int argc, const char** argv) {
     return -1;
   }
 
+  // Load image
   arma::fmat image, outputImage;
   mlpack::ImageInfo info;
   bool imageSuccess = mlpack::Load(inputFile, image, info, true);
@@ -37,8 +39,10 @@ int main(int argc, const char** argv) {
     return -1;
   }
 
+  // Inference
   model.Predict(image, info, outputImage);
 
+  // Save image with bounding boxes.
   bool saveSuccess = mlpack::Save(outputFile, outputImage, info, true);
   if (!saveSuccess) {
     std::cout << "Error: could not save " + outputFile << "\n";
