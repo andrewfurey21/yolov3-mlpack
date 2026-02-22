@@ -1,7 +1,7 @@
 # yolov3 in mlpack
 
 <div align="center">
-  <img src="./example.png" width="400" alt="App Screenshot">
+  <img src="./readme.png" width="400" alt="">
 </div>
 
 Implementation of the yolov3 family of models in mlpack, including yolov3, yolov3-tiny and yolov3-spp.
@@ -15,7 +15,7 @@ mlpack master, armadillo 15
 You can download the weights [here](https://drive.google.com/drive/folders/1BiACM5LxcD1m3wkutQ8GtVesWXfSCdeK). You can compile and run it with:
 
 ```bash
-g++ example.cpp -O3 -o yolov3-inference -larmadillo
+g++ example.cpp -O3 -o yolov3-inference -larmadillo -fopenmp
 
 # yolov3 (~60 million parameters)
 ./yolov3-inference yolov3-320.bin ./data/coco.names dog.jpg output.jpg
