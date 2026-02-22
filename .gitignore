@@ -5,3 +5,4 @@ weights/*
 images/*
 example
 !example.png
+yolov3-inference

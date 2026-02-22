@@ -124,14 +124,14 @@ class YOLOv3 {
     model.Reset();
 
     LoadWeights(weightsFile);
-    mlpack::data::Save("../weights/mlpack/yolov3-320-dagnetwork.bin", "yolov3-320-dagnetwork", model);
+    mlpack::Save("../weights/mlpack/yolov3-320-dagnetwork.bin", model);
     std::cout << "Saved weights\n";
   }
 
   ~YOLOv3() {}
 
   using Model =
-    mlpack::DAGNetwork<mlpack::EmptyLoss,
+    mlpack::DAGNetwork<mlpack::EmptyLossType<MatType>,
       mlpack::RandomInitialization, MatType>;
 
   void Training(const bool training)
@@ -419,6 +419,7 @@ class YOLOv3 {
   size_t predictionsPerCell;
   size_t numAttributes;
   std::vector<double> scale;
+ public:
   Model model;
   std::vector<size_t> layers;
   MatType parameters;
@@ -452,7 +453,7 @@ int main(int argc, const char** argv) {
   // const std::string outputFile = argv[2];
   //
   // const std::unordered_map<char, Image> alphabet = GetAlphabet(lettersDir);
-  // const std::vector<std::string> labels = GetLabels(labelsFile, numClasses);
+  const std::vector<std::string> labels = GetLabels(labelsFile, numClasses);
   //
   // Image image;
   // Image input(imgSize, imgSize, imgChannels);
@@ -463,6 +464,14 @@ int main(int argc, const char** argv) {
 
   YOLOv3<arma::fmat> model
     (imgSize, numClasses, predictionsPerCell, weightsFile);
+
+  std::vector<float> anchors = {10,13,  16,30,  33,23,  30,61,  62,45,  59,119,  116,90,  156,198,  373,326};
+
+  mlpack::YOLOv3 mlpackModel(imgSize, anchors, labels);
+  // mlpackModel.Model() = model.model; // TODO: this doesn't work? why? isn't this a dagnetwork bug?
+
+  mlpack::Load("../weights/mlpack/yolov3-320-dagnetwork.bin", mlpackModel.Model());
+  mlpack::Save("../weights/mlpack/yolov3-320.bin", mlpackModel);
 
   // model.Training(false);
   // model.Predict(input.data, detections);
