@@ -1,56 +1,22 @@
-#define MLPACK_ANN_IGNORE_SERIALIZATION_WARNING
+#define MLPACK_ENABLE_ANN_SERIALIZATION
 #include <mlpack.hpp>
 
-// Used for deserializing the model and loading the weights
-CEREAL_REGISTER_TYPE(mlpack::Layer<arma::fmat>)
-CEREAL_REGISTER_TYPE(mlpack::Identity<arma::fmat>)
-CEREAL_REGISTER_TYPE(mlpack::MultiLayer<arma::fmat>)
-CEREAL_REGISTER_TYPE(mlpack::Convolution<arma::fmat>)
-CEREAL_REGISTER_TYPE(mlpack::BatchNorm<arma::fmat>)
-CEREAL_REGISTER_TYPE(mlpack::LeakyReLU<arma::fmat>)
-CEREAL_REGISTER_TYPE(mlpack::Padding<arma::fmat>)
-CEREAL_REGISTER_TYPE(mlpack::MaxPooling<arma::fmat>)
-CEREAL_REGISTER_TYPE(mlpack::NearestInterpolation<arma::fmat>)
-CEREAL_REGISTER_TYPE(mlpack::YOLOv3Layer<arma::fmat>)
+int main(int argc, const char **argv) {
+  // Step 1: load the pretrained arma::mat weights.
+  // Download: https://models.mlpack.org/yolo/yolov3-320-coco-f64.bin
+  mlpack::YOLOv3<arma::mat> model;
+  mlpack::Load("yolov3-320-coco-f64.bin", model);
 
-int main(int argc, const char** argv) {
-  if (argc != 4) {
-    std::cout << "usage: ./yolov3 <weights_file> <input_image> <output_image>\n";
-    return -1;
-  }
+  // Step 2: load the image into an arma::fmat.
+  // Download: https://models.mlpack.org/yolo/dog.jpg
+  // Note: the image type must also be `arma::mat`
+  arma::mat inputImage, outputImage;
+  mlpack::ImageOptions opts;
+  mlpack::Load("./cat.jpg", inputImage, opts);
 
-  const std::string inputFile = argv[2];
-  const std::string outputFile = argv[3];
-  const std::string modelFile = argv[1];
+  // Step 3: Preprocess the `inputImage`, detect bounding boxes and draw them onto `outputImage`.
+  model.Predict(inputImage, opts, outputImage, true);
 
-  const double ignoreThreshold = 0.7; // 0.5 for yolov3-tiny
-
-  // Load model
-  mlpack::YOLOv3 model;
-  bool modelSuccess = mlpack::Load(modelFile, model);
-  if (!modelSuccess) {
-    std::cout << "Error: could not load " + modelFile;
-    return -1;
-  }
-
-  // Load image
-  arma::fmat image;
-  mlpack::ImageInfo info;
-  bool imageSuccess = mlpack::Load(inputFile, image, info, true);
-  if (!imageSuccess) {
-    std::cout << "Error: could not load " + inputFile;
-    return -1;
-  }
-
-  // Inference
-  model.Predict(image, info, ignoreThreshold);
-
-  // Save image with bounding boxes.
-  bool saveSuccess = mlpack::Save(outputFile, image, info, true);
-  if (!saveSuccess) {
-    std::cout << "Error: could not save " + outputFile << "\n";
-    return -1;
-  }
-
-  return 0;
+  // Step 4: Save to "output.jpg"
+  mlpack::Save("cat_output.jpg", outputImage, opts, true);
 }
